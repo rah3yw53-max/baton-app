@@ -968,14 +968,6 @@
           <span class="dash-next-text">다음 교대 지점 · <b id="cd-next-stop">휴게소 2</b></span>
         </div>
 
-        <div class="dash-progress-wrap">
-          <div class="dash-progress-labels">
-            <span>0km</span>
-            <span id="dash-total-km">230km</span>
-          </div>
-          <div class="dash-progress-track" id="dash-strip-track"></div>
-        </div>
-
         <div class="dash-actions">
           <button class="dash-action-btn" id="btn-advance">+10km</button>
           <button class="dash-action-btn primary" id="btn-autoplay">자동 진행 ▶</button>
@@ -1593,10 +1585,29 @@
     if(!container || typeof kakao==='undefined' || !kakao.maps) return;
     dashMapInstance = new kakao.maps.Map(container, {
       center: new kakao.maps.LatLng(state.originCoord?.lat || 37.5665, state.originCoord?.lng || 126.9780),
-      level: 8,
+      level: 6,
       draggable: true,
       scrollwheel: true
     });
+  }
+
+  // 자동차 아이콘 SVG (heading 각도 회전)
+  function carMarkerHTML(angleDeg, color){
+    return `<div style="width:44px;height:44px;transform:translate(-50%,-50%) rotate(${angleDeg}deg);transform-origin:center;pointer-events:none;">
+      <svg viewBox="0 0 44 44" width="44" height="44">
+        <circle cx="22" cy="22" r="20" fill="rgba(49,130,246,0.15)"/>
+        <circle cx="22" cy="22" r="14" fill="#fff" stroke="${color||'#3182F6'}" stroke-width="2.5"/>
+        <path d="M22 10 L28 22 L22 19 L16 22 Z" fill="${color||'#3182F6'}"/>
+      </svg>
+    </div>`;
+  }
+
+  function bearingDeg(a, b){
+    const φ1 = a.lat*Math.PI/180, φ2 = b.lat*Math.PI/180;
+    const Δλ = (b.lng-a.lng)*Math.PI/180;
+    const y = Math.sin(Δλ)*Math.cos(φ2);
+    const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+    return (Math.atan2(y,x)*180/Math.PI + 360) % 360;
   }
 
   function drawDashMap(){
@@ -1619,9 +1630,9 @@
       const path = [new kakao.maps.LatLng(startLat,startLng), new kakao.maps.LatLng(endLat,endLng)];
       const line = new kakao.maps.Polyline({
         path,
-        strokeWeight:5,
+        strokeWeight:6,
         strokeColor:COLORS[seg.driverIdx%COLORS.length],
-        strokeOpacity:0.85,
+        strokeOpacity:0.9,
         strokeStyle:'solid'
       });
       line.setMap(dashMapInstance);
@@ -1646,37 +1657,84 @@
       dashMapOverlays.push(m);
     });
 
+    // 초기 화면: 전체 경로 보기 상태
     dashMapInstance.setBounds(bounds);
-    updateDashProgressMarker();
+    // 잠시 뒤 자동차 위치로 줌인
+    setTimeout(()=>{
+      dashMapInstance.setLevel(4);
+      updateDashProgressMarker(true);
+    }, 400);
   }
 
-  function updateDashProgressMarker(){
+  // 부드러운 애니메이션: prev → next km 사이를 짧게 이어감
+  let smoothAnimId = null;
+  let smoothProgress = 0; // 화면에 실제 표시되는 부드러운 km (정수형 progressKm과 별도)
+
+  function updateDashProgressMarker(recenter){
     if(!dashMapInstance || !state.originCoord || !state.destCoord) return;
-    if(dashProgressMarker){ dashProgressMarker.setMap(null); dashProgressMarker=null; }
-    const t = Math.min(1, state.progressKm/state.totalKm);
+    if(dashProgressMarker){ dashProgressMarker.setMap(null); }
+    const plan = state.plans[state.selectedPlanKey];
+    const useKm = smoothProgress || state.progressKm;
+    const t = Math.min(1, useKm/state.totalKm);
     const lat = state.originCoord.lat + (state.destCoord.lat - state.originCoord.lat)*t;
     const lng = state.originCoord.lng + (state.destCoord.lng - state.originCoord.lng)*t;
-    // 현재 위치 커스텀 오버레이 (파란 원)
-    const dot = document.createElement('div');
-    dot.style.cssText = 'width:20px;height:20px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+
+    // 현재 세그먼트의 운전자 색상
+    const idx = currentSegmentIndex(useKm);
+    const driverColor = COLORS[plan.segs[idx].driverIdx % COLORS.length];
+
+    // 진행 방향 각도 (다음 위치와의 방향)
+    const nextT = Math.min(1, t+0.01);
+    const nextLat = state.originCoord.lat + (state.destCoord.lat - state.originCoord.lat)*nextT;
+    const nextLng = state.originCoord.lng + (state.destCoord.lng - state.originCoord.lng)*nextT;
+    const heading = bearingDeg({lat,lng}, {lat:nextLat,lng:nextLng});
+
+    const carEl = document.createElement('div');
+    carEl.innerHTML = carMarkerHTML(heading, driverColor);
     dashProgressMarker = new kakao.maps.CustomOverlay({
       position: new kakao.maps.LatLng(lat,lng),
-      content: dot,
+      content: carEl.firstElementChild,
       map: dashMapInstance,
       yAnchor: 0.5,
-      xAnchor: 0.5
+      xAnchor: 0.5,
+      zIndex: 100
     });
-    dashMapOverlays.push(dashProgressMarker);
+
+    if(recenter){
+      // 카메라를 자동차 살짝 아래로 (자동차가 화면 상단쪽에 위치)
+      const offsetLat = lat - (state.destCoord.lat - state.originCoord.lat)*0.001;
+      dashMapInstance.panTo(new kakao.maps.LatLng(offsetLat, lng));
+    }
+  }
+
+  // 진행 시 목표 km까지 부드럽게 애니메이션
+  function animateToProgress(targetKm){
+    if(smoothAnimId){ cancelAnimationFrame(smoothAnimId); smoothAnimId = null; }
+    const startKm = smoothProgress || 0;
+    const duration = 900; // ms
+    const t0 = performance.now();
+    function frame(now){
+      const elapsed = now - t0;
+      const p = Math.min(1, elapsed/duration);
+      const eased = p<0.5 ? 2*p*p : 1 - Math.pow(-2*p+2, 2)/2; // easeInOutQuad
+      smoothProgress = startKm + (targetKm - startKm)*eased;
+      updateDashProgressMarker(true);
+      updateDashboardText();
+      if(p<1){ smoothAnimId = requestAnimationFrame(frame); }
+      else { smoothAnimId = null; smoothProgress = targetKm; }
+    }
+    smoothAnimId = requestAnimationFrame(frame);
   }
 
   function initDashboard(){
     const plan = state.plans[state.selectedPlanKey];
     state.progressKm = 0;
+    smoothProgress = 0;
+    if(smoothAnimId){ cancelAnimationFrame(smoothAnimId); smoothAnimId = null; }
     state.lastHandoffIndex = -1;
     state.log = [];
     document.getElementById('dash-route-label').textContent = `${state.origin} → ${state.destination}`;
     document.getElementById('dash-plan-name').textContent = plan.title;
-    document.getElementById('dash-total-km').textContent = fmt(state.totalKm)+'km';
     renderLogEmpty();
     // 지도 초기화 (탭 표시 후 relayout 필요)
     setTimeout(()=>{
@@ -1695,9 +1753,10 @@
     return plan.segs.length-1;
   }
 
-  function updateDashboard(){
+  function updateDashboardText(){
     const plan = state.plans[state.selectedPlanKey];
-    const idx = currentSegmentIndex(state.progressKm);
+    const useKm = smoothProgress || state.progressKm;
+    const idx = currentSegmentIndex(useKm);
     const seg = plan.segs[idx];
     const driver = state.passengers[seg.driverIdx];
 
@@ -1706,35 +1765,22 @@
     avatar.style.background = COLORS[seg.driverIdx % COLORS.length];
     document.getElementById('cd-name').textContent = driver.name;
 
-    const remaining = Math.max(0, fmt(seg.endKm - state.progressKm));
+    const remaining = Math.max(0, fmt(seg.endKm - useKm));
     document.getElementById('cd-remaining-km').textContent = remaining;
 
     const isLast = idx===plan.segs.length-1;
     const nextStopEl = document.getElementById('cd-next-stop');
-    if(isLast && state.progressKm>=state.totalKm){
+    if(isLast && useKm>=state.totalKm){
       nextStopEl.textContent = '도착 완료 🎉';
     } else {
       const rs = nearestRestStop(seg.endKm, state.restStops);
       nextStopEl.textContent = isLast ? '목적지 도착' : (rs ? rs.name : `${fmt(seg.endKm)}km 지점`);
     }
+  }
 
-    // 하단 progress bar 렌더링
-    const trackEl = document.getElementById('dash-strip-track');
-    trackEl.innerHTML = '';
-    plan.segs.forEach(s=>{
-      const widthPct = ((s.endKm - s.startKm)/state.totalKm*100);
-      const seg = document.createElement('div');
-      seg.className = 'strip-seg';
-      seg.style.width = widthPct+'%';
-      seg.style.background = COLORS[s.driverIdx%COLORS.length];
-      trackEl.appendChild(seg);
-    });
-    const marker = document.createElement('div');
-    marker.className = 'progress-marker';
-    marker.style.left = (Math.min(state.progressKm, state.totalKm)/state.totalKm*100)+'%';
-    trackEl.appendChild(marker);
-
-    updateDashProgressMarker();
+  function updateDashboard(){
+    updateDashboardText();
+    updateDashProgressMarker(false);
   }
 
   function addLog(text, subtitle){
@@ -1779,7 +1825,7 @@
   document.getElementById('btn-autoplay').addEventListener('click', (e)=>{
     if(state.autoplay){ stopAutoplay(); }
     else{
-      state.autoplay = setInterval(()=>advance(6), 550);
+      state.autoplay = setInterval(()=>advance(8), 1100);
       e.target.textContent = '일시정지 ⏸';
     }
   });
@@ -1791,7 +1837,8 @@
     const prev = state.progressKm;
     state.progressKm = Math.min(state.totalKm, fmt(state.progressKm+km));
     checkHandoff(prev, state.progressKm);
-    updateDashboard();
+    // 지도 자동차: 부드럽게 이동
+    animateToProgress(state.progressKm);
     if(state.progressKm>=state.totalKm) stopAutoplay();
   }
 
@@ -2003,23 +2050,40 @@
 
   // 3단계 → 4단계: 배분
   document.getElementById('btn-to-rec').addEventListener('click', async ()=>{
-    state.selectedPlanKey = null;
-    // 인원 수에 맞게 정차 지점 다시 검색
-    const stops = await searchRestStopsAlongRoute(state.originCoord, state.destCoord);
-    state.realRestStops = stops;
-    computePlans();
-    renderRecCards();
-    // 경로 요약 채우기
-    const rs = document.getElementById('route-summary');
-    if(rs && state.selectedRoute){
-      rs.children[0].textContent = `🛣️ ${state.selectedRoute.name}`;
-      rs.children[1].textContent = `${fmt(state.totalKm)}km · ${fmtDuration(state.totalMinutes)}`;
+    const btn = document.getElementById('btn-to-rec');
+    const originalText = btn.textContent;
+    btn.textContent = '계산 중...';
+    btn.disabled = true;
+    try{
+      // 인원 수에 맞게 정차 지점 다시 검색
+      try{
+        const stops = await searchRestStopsAlongRoute(state.originCoord, state.destCoord);
+        state.realRestStops = stops;
+      } catch(err){
+        console.warn('휴게소 검색 실패:', err);
+      }
+      state.selectedPlanKey = 'equal';
+      computePlans();
+      // 경로 요약 채우기
+      const rs = document.getElementById('route-summary');
+      if(rs && state.selectedRoute){
+        rs.children[0].textContent = `🛣️ ${state.selectedRoute.name}`;
+        rs.children[1].textContent = `${fmt(state.totalKm)}km · ${fmtDuration(state.totalMinutes)}`;
+      }
+      showScreen('rec');
+      // 화면 전환 후 지도 렌더링
+      setTimeout(()=>{
+        renderRecCards();
+        if(recMapInstance) recMapInstance.relayout();
+        drawPlanOnRecMap(state.selectedPlanKey);
+      }, 100);
+    } catch(err){
+      console.error(err);
+      alert('배분 방식 계산 실패: '+err.message);
+    } finally {
+      btn.textContent = originalText;
+      btn.disabled = false;
     }
-    showScreen('rec');
-    setTimeout(()=>{
-      if(recMapInstance) recMapInstance.relayout();
-      drawPlanOnRecMap(state.selectedPlanKey);
-    }, 50);
   });
 
   // back 링크들
