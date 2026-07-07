@@ -626,7 +626,71 @@
   .ac-item strong{display:block;font-size:13.5px;}
   .ac-item span{display:block;font-size:11px;color:var(--muted-dark);margin-top:1px;}
 
-  /* 경로 옵션 카드 */
+  /* 배분 방식 칩 (탭 스타일) */
+  .rec-chips{
+    display:flex;
+    gap:8px;
+    margin-bottom:16px;
+    overflow-x:auto;
+    padding-bottom:2px;
+  }
+  .rec-chip{
+    flex:1;
+    min-width:0;
+    padding:11px 8px;
+    border:1.5px solid var(--cream-dim);
+    background:var(--surface,#fff);
+    border-radius:12px;
+    cursor:pointer;
+    font-family:'Pretendard',sans-serif;
+    font-weight:700;
+    font-size:13.5px;
+    letter-spacing:-0.02em;
+    color:var(--ink);
+    transition:all .18s;
+    text-align:center;
+    white-space:nowrap;
+  }
+  .rec-chip:hover{border-color:var(--accent);}
+  .rec-chip.selected{
+    background:var(--accent);
+    color:#fff;
+    border-color:var(--accent);
+    box-shadow:0 6px 14px rgba(49,130,246,0.25);
+  }
+  .rec-chip .chip-emoji{margin-right:5px;font-size:14px;}
+
+  /* 선택한 방식 상세 카드 */
+  #rec-detail{margin-bottom:8px;}
+  .rec-detail-card{
+    background:var(--surface,#fff);
+    border:1.5px solid var(--cream-dim);
+    border-radius:16px;
+    padding:18px;
+    animation:fadeIn .25s ease;
+  }
+  .rec-detail-head{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:6px;
+  }
+  .rec-detail-title{
+    font-family:'Pretendard',sans-serif;
+    font-weight:800;
+    font-size:17px;
+    letter-spacing:-0.02em;
+    color:var(--ink);
+    margin:0;
+  }
+  .rec-detail-tag{
+    font-size:11px;font-weight:700;color:#fff;
+    background:var(--accent);
+    padding:3px 9px;border-radius:20px;
+  }
+  .rec-detail-desc{
+    font-size:13px;color:var(--muted-dark);
+    line-height:1.55;margin:0 0 14px;
+  }
+  .rec-detail-list{margin-top:4px;}
   .route-opt-card{
     border:1.5px solid var(--cream-dim);
     border-radius:var(--radius);
@@ -853,17 +917,18 @@
   <div class="screen" id="screen-rec">
     <div class="back-link" id="back-to-passengers">← 인원 다시 설정</div>
     <h1 class="page-title">어떻게 나눠 탈까요?</h1>
-    <p class="page-sub">배분 방식을 골라주세요. 각 방식마다 교대 지점과 담당 구간이 달라져요.</p>
+    <p class="page-sub">방식을 골라주세요. 각 방식마다 교대 지점과 담당 구간이 달라져요.</p>
 
-    <div id="route-summary" style="background:var(--accent-soft);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px;display:flex;justify-content:space-between;align-items:center;">
+    <div id="route-summary" style="background:var(--accent-soft);border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:13px;display:flex;justify-content:space-between;align-items:center;">
       <span style="font-weight:700;color:var(--accent-deep);"></span>
       <span style="color:var(--muted-dark);"></span>
     </div>
 
-    <div id="rec-map" style="width:100%;height:200px;border-radius:14px;border:1.5px solid var(--cream-dim);margin-bottom:8px;"></div>
-    <div class="route-map-legend" id="rec-map-legend"></div>
+    <div id="rec-map" style="width:100%;height:220px;border-radius:14px;border:1.5px solid var(--cream-dim);margin-bottom:14px;"></div>
 
-    <div id="rec-cards"></div>
+    <div class="rec-chips" id="rec-chips"></div>
+
+    <div id="rec-detail"></div>
 
     <button class="btn btn-primary" id="btn-to-dash" disabled>이 방식으로 출발하기</button>
   </div>
@@ -1385,49 +1450,66 @@
   // ---------- recommendation screen ----------
   let rollTimer=null;
   function renderRecCards(){
-    const wrap = document.getElementById('rec-cards');
-    wrap.innerHTML='';
+    const chips = document.getElementById('rec-chips');
+    chips.innerHTML='';
+    const emojis = {equal:'⚖️', traffic:'🚦', random:'🎲'};
     ['equal','traffic','random'].forEach(key=>{
       const plan = state.plans[key];
-      const card = document.createElement('div');
-      card.className='rec-card';
-      card.dataset.key = key;
-      const bodyHtml = key==='random'
-        ? `<div class="drumroll" id="drumroll-box">
-             <div class="drumroll-label">두구두구...</div>
-             <div class="drumroll-name" id="drumroll-name">?</div>
-             <div class="drumroll-sub">카드를 누르면 추첨을 시작해요</div>
-           </div>`
-        : `<div class="strip-legend legend-${key}"></div>`;
-      card.innerHTML = `
-        <div class="rec-head">
-          <h3 class="rec-title">${plan.title}</h3>
-          <span class="rec-tag ${plan.tagClass}">${plan.tag}</span>
-        </div>
-        <p class="rec-desc">${plan.desc}</p>
-        ${bodyHtml}
-      `;
-      wrap.appendChild(card);
-      if(key!=='random'){
-        renderLegend(card.querySelector('.legend-'+key), plan.segs, state.passengers);
-      }
-
-      card.addEventListener('click', ()=>{
-        wrap.querySelectorAll('.rec-card').forEach(c=>c.classList.remove('selected'));
-        card.classList.add('selected');
+      const chip = document.createElement('button');
+      chip.className='rec-chip';
+      chip.dataset.key = key;
+      chip.innerHTML = `<span class="chip-emoji">${emojis[key]}</span>${plan.title}`;
+      chips.appendChild(chip);
+      chip.addEventListener('click', ()=>{
+        chips.querySelectorAll('.rec-chip').forEach(c=>c.classList.remove('selected'));
+        chip.classList.add('selected');
         state.selectedPlanKey = key;
-        document.getElementById('btn-to-dash').disabled = false;
+        renderRecDetail(key);
         drawPlanOnRecMap(key);
-        if(key==='random') runDrumroll();
+        document.getElementById('btn-to-dash').disabled = false;
       });
     });
     if(!recMapInstance) initRecMap();
+    // 기본값: 공평하게 가기
     const defaultKey = 'equal';
     state.selectedPlanKey = defaultKey;
-    const defaultCard = wrap.querySelector('[data-key="'+defaultKey+'"]');
-    if(defaultCard) defaultCard.classList.add('selected');
+    chips.querySelector('[data-key="'+defaultKey+'"]').classList.add('selected');
+    renderRecDetail(defaultKey);
     document.getElementById('btn-to-dash').disabled = false;
     drawPlanOnRecMap(defaultKey);
+  }
+
+  function renderRecDetail(key){
+    const plan = state.plans[key];
+    const wrap = document.getElementById('rec-detail');
+    const bodyHtml = key==='random'
+      ? `<div class="drumroll" id="drumroll-box">
+           <div class="drumroll-label">두구두구...</div>
+           <div class="drumroll-name" id="drumroll-name">?</div>
+           <div class="drumroll-sub">아래 버튼을 눌러 추첨을 시작해요</div>
+           <button class="btn-reroll" id="btn-start-roll" style="margin-top:14px;">🎲 추첨 시작</button>
+         </div>`
+      : `<div class="strip-legend legend-detail"></div>`;
+    wrap.innerHTML = `
+      <div class="rec-detail-card">
+        <div class="rec-detail-head">
+          <h3 class="rec-detail-title">${plan.title}</h3>
+          <span class="rec-detail-tag">${plan.tag}</span>
+        </div>
+        <p class="rec-detail-desc">${plan.desc}</p>
+        ${bodyHtml}
+      </div>
+    `;
+    if(key!=='random'){
+      renderLegend(wrap.querySelector('.legend-detail'), plan.segs, state.passengers);
+    } else {
+      document.getElementById('btn-start-roll').addEventListener('click', (e)=>{
+        e.stopPropagation();
+        runDrumroll();
+      });
+      // 진입 시 자동 실행
+      setTimeout(runDrumroll, 200);
+    }
   }
 
   function runDrumroll(){
@@ -1485,7 +1567,10 @@
       box.insertAdjacentHTML('beforeend', listHtml);
 
       // 다시 뽑기 버튼
-      if(!box.querySelector('.btn-reroll')){
+      const existingReroll = box.querySelector('.btn-reroll');
+      if(existingReroll){
+        existingReroll.textContent = '🎲 다시 뽑기';
+      } else {
         const reroll = document.createElement('button');
         reroll.className='btn-reroll';
         reroll.textContent='🎲 다시 뽑기';
