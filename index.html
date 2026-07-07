@@ -1006,10 +1006,115 @@
 
   function buildRestStops(totalKm){
     if(state.realRestStops && state.realRestStops.length){
-      return state.realRestStops.map(s=>({name:s.name, km: fmt(totalKm*s.ratio)}));
+      return state.realRestStops.map(s=>({
+        name:s.name,
+        type:s.type,
+        emoji:s.emoji,
+        priority:s.priority || 3,
+        km: fmt(totalKm*s.ratio)
+      }));
     }
-    const ratios = [0.24, 0.52, 0.78];
-    return ratios.map((r,i)=>({name:'휴게소 '+(i+1), km: fmt(totalKm*r)}));
+    // Mock 후보 - 카카오 검색 실패 시 fallback
+    const mockPoints = [
+      {ratio:0.12, name:'초입 갓길', type:'갓길', emoji:'🛣️', priority:3},
+      {ratio:0.22, name:'첫번째 편의점', type:'편의점', emoji:'🏪', priority:4},
+      {ratio:0.28, name:'첫번째 휴게소', type:'휴게소', emoji:'🅿️', priority:1},
+      {ratio:0.38, name:'중간 졸음쉼터', type:'졸음쉼터', emoji:'😴', priority:2},
+      {ratio:0.48, name:'주유소 A', type:'주유소', emoji:'⛽', priority:3},
+      {ratio:0.55, name:'두번째 휴게소', type:'휴게소', emoji:'🅿️', priority:1},
+      {ratio:0.68, name:'중후반 편의점', type:'편의점', emoji:'🏪', priority:4},
+      {ratio:0.75, name:'세번째 휴게소', type:'휴게소', emoji:'🅿️', priority:1},
+      {ratio:0.82, name:'후반 졸음쉼터', type:'졸음쉼터', emoji:'😴', priority:2},
+      {ratio:0.9, name:'주유소 B', type:'주유소', emoji:'⛽', priority:3}
+    ];
+    return mockPoints.map(p=>({
+      name:p.name, type:p.type, emoji:p.emoji, priority:p.priority,
+      km: fmt(totalKm*p.ratio)
+    }));
+  }
+
+  // 각 방식별로 다른 기준으로 교대 지점(정차 지점)을 고르는 헬퍼
+  // strategy:
+  //  - 'safe'  : 안전 우선 (휴게소 > 졸음쉼터), 균등 분할 지점 근처
+  //  - 'early' : 혼잡 구간(45-65%)에 들어가기 전에 미리 교대
+  //  - 'random': 완전 무작위
+  function pickHandoffs(candidates, totalKm, count, strategy){
+    if(!candidates || !candidates.length) return [];
+    const n = count;
+    if(n <= 0) return [];
+
+    // 균등 타겟 위치
+    const targets = [];
+    for(let i=1;i<=n;i++){ targets.push(i/(n+1)); }
+
+    if(strategy === 'early'){
+      // 교통 상황 고려: 혼잡 구간(0.45~0.65)을 피해서 앞으로
+      for(let i=0;i<targets.length;i++){
+        if(targets[i] > 0.35 && targets[i] < 0.7){
+          // 혼잡 구간 근처면 앞으로 크게 당김
+          targets[i] = Math.max(0.2, targets[i] - 0.18);
+        }
+      }
+    }
+
+    if(strategy === 'random'){
+      // 완전 랜덤 타겟
+      for(let i=0;i<targets.length;i++){
+        targets[i] = 0.1 + Math.random()*0.8;
+      }
+      targets.sort((a,b)=>a-b);
+    }
+
+    const picked = [];
+    targets.forEach(t=>{
+      const targetKm = totalKm * t;
+      let best = null, bestScore = Infinity;
+      candidates.forEach(c=>{
+        if(picked.find(p=>p.name===c.name)) return;
+        const distScore = Math.abs(c.km - targetKm);
+
+        let priorityBonus = 0;
+        if(strategy === 'safe'){
+          // 안전 우선: 휴게소(1) 강하게 선호
+          priorityBonus = (c.priority - 1) * (totalKm * 0.06);
+        } else if(strategy === 'early'){
+          // 혼잡 회피: 휴게소·졸음쉼터 선호 (priority 1-2)
+          priorityBonus = (c.priority - 1) * (totalKm * 0.03);
+        } else if(strategy === 'random'){
+          // 랜덤은 안전도 무시, 위치만 우선
+          priorityBonus = 0;
+        }
+        const score = distScore + priorityBonus;
+        if(score < bestScore){ bestScore = score; best = c; }
+      });
+      if(best) picked.push(best);
+    });
+    return picked.sort((a,b)=>a.km-b.km);
+  }
+
+  // 실제 정차 지점들을 이용해 세그먼트를 만드는 함수
+  function makeSegmentsFromHandoffs(passengers, totalKm, handoffs){
+    const n = passengers.length;
+    const boundaries = [0];
+    handoffs.forEach(h=>boundaries.push(h.km));
+    boundaries.push(totalKm);
+    // 만약 실제 handoff 수가 부족하면 균등 분할로 대체
+    if(boundaries.length - 1 < n){
+      const each = totalKm/n;
+      boundaries.length = 0;
+      for(let i=0;i<=n;i++){ boundaries.push(fmt(each*i)); }
+      boundaries[n] = totalKm;
+    }
+    const segs = [];
+    for(let i=0;i<n;i++){
+      segs.push({
+        driverIdx: i,
+        startKm: boundaries[i],
+        endKm: boundaries[i+1],
+        handoffAt: i<n-1 ? handoffs[i] : null
+      });
+    }
+    return segs;
   }
 
   // ---------- kakao map integration ----------
@@ -1109,24 +1214,30 @@
       bounds.extend(new kakao.maps.LatLng(origin.lat, origin.lng));
       bounds.extend(new kakao.maps.LatLng(dest.lat, dest.lng));
 
-      // 거리에 따라 다른 종류의 정차 지점 검색
-      // 짧은 거리(50km 미만): 편의점·주유소·CU 등
-      // 중간 거리(50~150km): 졸음쉼터·주유소·휴게소
-      // 긴 거리(150km+): 고속도로 휴게소
-      let queries;
+      // 다양한 후보 지점 타입 - 안전도 우선순위와 함께
+      // priority: 낮을수록 안전한 곳 (교대에 적합)
+      const queries = [
+        {q:'고속도로 휴게소', type:'휴게소', priority:1, emoji:'🅿️'},
+        {q:'졸음쉼터', type:'졸음쉼터', priority:2, emoji:'😴'},
+        {q:'휴게소', type:'휴게소', priority:1, emoji:'🅿️'},
+        {q:'주유소', type:'주유소', priority:3, emoji:'⛽'},
+        {q:'편의점', type:'편의점', priority:4, emoji:'🏪'}
+      ];
+
+      // 거리에 따라 검색할 타입 다르게
+      let activeQueries;
       if(directKm < 50){
-        queries = ['편의점','주유소','휴게소'];
+        activeQueries = queries.filter(q=>['편의점','주유소','휴게소','졸음쉼터'].includes(q.type));
       } else if(directKm < 150){
-        queries = ['휴게소','졸음쉼터','주유소'];
+        activeQueries = queries.filter(q=>['휴게소','졸음쉼터','주유소'].includes(q.type));
       } else {
-        queries = ['고속도로 휴게소','휴게소','주유소'];
+        activeQueries = queries.filter(q=>['휴게소','졸음쉼터'].includes(q.type));
       }
 
-      // 여러 쿼리 결과 합치기
       const allResults = [];
       let done = 0;
-      queries.forEach(q=>{
-        places.keywordSearch(q, (data,status)=>{
+      activeQueries.forEach(qCfg=>{
+        places.keywordSearch(qCfg.q, (data,status)=>{
           done++;
           if(status===kakao.maps.services.Status.OK && data && data.length){
             data.forEach(d=>{
@@ -1134,15 +1245,20 @@
               const dOrigin = haversineKm(origin,p);
               const dDest = haversineKm(p,dest);
               const ratio = dOrigin/((dOrigin+dDest)||1);
-              // 경로에서 너무 멀리 떨어진 것 제외 (직선 우회비율 체크)
               const directRoute = dOrigin + dDest;
               const detour = directRoute / (directKm || 1);
               if(ratio>0.05 && ratio<0.95 && detour < 1.6){
-                allResults.push({name:d.place_name, category:q, lat:p.lat, lng:p.lng, ratio, detour});
+                allResults.push({
+                  name:d.place_name,
+                  type:qCfg.type,
+                  emoji:qCfg.emoji,
+                  priority:qCfg.priority,
+                  lat:p.lat, lng:p.lng, ratio, detour
+                });
               }
             });
           }
-          if(done===queries.length){
+          if(done===activeQueries.length){
             if(allResults.length===0){ resolve(null); return; }
             // 중복 제거 (이름 기준)
             const seen = new Set();
@@ -1150,25 +1266,7 @@
               if(seen.has(s.name)) return false;
               seen.add(s.name); return true;
             }).sort((a,b)=>a.ratio-b.ratio);
-
-            // 인원에 따라 정차 지점 개수: 인원-1 만큼 필요 (n명이면 n-1번 교대)
-            // 최대 5개, 최소 1개
-            const passengerCount = (state.passengers && state.passengers.length) || 4;
-            const need = Math.max(1, Math.min(5, passengerCount-1));
-
-            // ratio가 균등하게 분포하도록 선택
-            const targets = [];
-            for(let i=1;i<=need;i++){ targets.push(i/(need+1)); }
-            const picks=[];
-            targets.forEach(t=>{
-              let best=null, bd=Infinity;
-              unique.forEach(s=>{
-                const d=Math.abs(s.ratio-t);
-                if(d<bd && !picks.find(p=>p.name===s.name)){ bd=d; best=s; }
-              });
-              if(best) picks.push(best);
-            });
-            resolve(picks.length ? picks : null);
+            resolve(unique);
           }
         }, {bounds, size:15});
       });
@@ -1241,10 +1339,39 @@
 
   function computePlans(){
     state.restStops = buildRestStops(state.totalKm);
+    const passengerCount = state.passengers.length;
+    const need = Math.max(0, passengerCount - 1);
+    const candidates = state.restStops;
+
+    const equalHandoffs = pickHandoffs(candidates, state.totalKm, need, 'safe');
+    const trafficHandoffs = pickHandoffs(candidates, state.totalKm, need, 'early');
+    const randomHandoffs = pickHandoffs(candidates, state.totalKm, need, 'random');
+
     state.plans = {
-      equal: {key:'equal', title:'공평하게 가기', tag:'기본', tagClass:'', desc:'모두 똑같은 거리를 나눠서 운전해요. 가장 공평하고 예측이 쉬워요.', segs: planEqual(state.passengers, state.totalKm)},
-      traffic: {key:'traffic', title:'교통 상황 고려', tag:'추천', tagClass:'tag-amber', desc:'혼잡 구간을 피해 교대 타이밍을 조정해요. 막히는 도로에서 교대하지 않도록 배려해요.', segs: planTraffic(state.passengers, state.totalKm)},
-      random: {key:'random', title:'제비뽑기(랜덤)', tag:'긴장감', tagClass:'tag-brown', desc:'누가 얼마나 운전할지 무작위로 정해요. 누구는 짧게, 누구는 길게 — 결과는 그날의 운!', segs: planRandom(state.passengers, state.totalKm)}
+      equal: {
+        key:'equal', title:'공평하게 가기', tag:'기본', tagClass:'',
+        desc:'거리를 균등하게 나눠서 안전한 휴게소·졸음쉼터에서 교대해요.',
+        segs: makeSegmentsFromHandoffs(state.passengers, state.totalKm, equalHandoffs),
+        handoffs: equalHandoffs
+      },
+      traffic: {
+        key:'traffic', title:'교통 상황 고려', tag:'추천', tagClass:'tag-amber',
+        desc:'혼잡 구간 전에 미리 교대해서 정체 도로에서 운전대를 안 잡도록 배려해요.',
+        segs: makeSegmentsFromHandoffs(state.passengers, state.totalKm, trafficHandoffs),
+        handoffs: trafficHandoffs
+      },
+      random: {
+        key:'random', title:'제비뽑기(랜덤)', tag:'긴장감', tagClass:'tag-brown',
+        desc:'교대 위치도 담당자도 무작위. 오늘의 운을 시험해보세요!',
+        segs: makeSegmentsFromHandoffs(state.passengers, state.totalKm, randomHandoffs),
+        handoffs: randomHandoffs
+      }
+    };
+    // 랜덤 방식은 매번 다시 뽑을 수 있게 함수 참조 저장
+    state.plans.random._makeSegs = ()=>{
+      const newHandoffs = pickHandoffs(candidates, state.totalKm, need, 'random');
+      state.plans.random.handoffs = newHandoffs;
+      state.plans.random.segs = makeSegmentsFromHandoffs(state.passengers, state.totalKm, newHandoffs);
     };
   }
 
@@ -1329,8 +1456,10 @@
       const handoffText = isLast
         ? `<span class="hand-arrive">🏁 ${state.destination} 도착</span>`
         : (()=>{
-            const rs = nearestRestStop(seg.endKm, state.restStops);
-            if(rs) return `<span class="hand-loc">📍 <b>${rs.name}</b>에서 교대</span>`;
+            const h = seg.handoffAt;
+            if(h){
+              return `<span class="hand-loc">${h.emoji||'📍'} <b>${h.name}</b>에서 교대 <span style="color:var(--muted);font-weight:500;">(${h.type})</span></span>`;
+            }
             return `<span class="hand-loc">📍 ${fmt(seg.endKm)}km 지점에서 교대</span>`;
           })();
       const row=document.createElement('div');
@@ -1950,7 +2079,7 @@
   const ROUTE_PRIORITIES = [
     {key:'RECOMMEND', name:'내비추천', tag:'추천', desc:'카카오내비가 추천하는 최적 경로', avoid:''},
     {key:'TIME', name:'최소시간', tag:'빠름', desc:'가장 빠르게 도착하는 경로', avoid:''},
-    {key:'RECOMMEND', name:'무료도로', tag:'무료', desc:'통행료 없는 경로 (시간이 더 걸릴 수 있어요)', avoid:'toll'}
+    {key:'RECOMMEND', name:'무료도로 우선', tag:'절약', desc:'통행료를 최대한 아끼는 경로 (완전 무료가 아닐 수 있어요)', avoid:'toll'}
   ];
 
   async function fetchRoute(priority, avoid){
