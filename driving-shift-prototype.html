@@ -1,0 +1,1434 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>교대운전 · 다음 교대까지</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=b9cd88f7337a37f95a302ceba393acf4&libraries=services"></script>
+<style>
+  :root{
+    /* 테마 포인트 컬러 (피커로 교체됨, 기본: 블루) */
+    --accent:#3182F6;
+    --accent-deep:#1B64DA;
+    --accent-soft:#E8F1FE;
+    /* 기존 변수명 → 바통 팔레트로 재매핑 */
+    --asphalt:#211F1D;
+    --asphalt-2:#2E2B28;
+    --asphalt-3:#3B3733;
+    --cream:#FBF9F5;
+    --cream-dim:#EDE9E1;
+    --green:var(--accent);
+    --green-light:var(--accent-deep);
+    --brown:#8B7E72;
+    --amber:#F2A93B;
+    --ink:#1E1B18;
+    --muted:#A8A29B;
+    --muted-dark:#6E6862;
+    --danger:#E2603B;
+    --radius:18px;
+    /* 드라이버 팔레트 */
+    --d0:#2FB89E; --d1:#F2A93B; --d2:#5B8DEF; --d3:#E2725B; --d4:#9B7EDE; --d5:#E86FA9;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--asphalt);
+    color:var(--ink);
+    font-family:'Pretendard','Noto Sans KR',sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+    display:flex;
+    justify-content:center;
+    align-items:flex-start;
+  }
+  .display{
+    font-family:'Pretendard','Noto Sans KR',sans-serif;
+    font-weight:800;
+    letter-spacing:-0.02em;
+  }
+  #app{
+    width:100%;
+    max-width:430px;
+    min-height:100vh;
+    background:var(--cream);
+    position:relative;
+    padding-bottom:40px;
+    overflow-x:hidden;
+  }
+  /* 데스크탑에서는 폰처럼 프레임 씌우기 */
+  @media (min-width:600px){
+    body{
+      align-items:center;
+      padding:24px 0;
+    }
+    #app{
+      min-height:auto;
+      height:calc(100vh - 48px);
+      max-height:900px;
+      border-radius:36px;
+      box-shadow:0 20px 60px rgba(0,0,0,0.4);
+      overflow-y:auto;
+      overflow-x:hidden;
+      border:10px solid #0d0d10;
+    }
+  }
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:18px 20px 16px;
+    border-bottom:1px solid var(--line, var(--cream-dim));
+  }
+  .topbar .brand{
+    display:flex;
+    align-items:center;
+    gap:9px;
+  }
+  .brand-badge{
+    width:34px;height:34px;border-radius:11px;
+    background:var(--accent);
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+    box-shadow:0 3px 8px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .brand-badge svg{width:20px;height:20px;}
+  .brand-name{font-family:'Pretendard',sans-serif;font-weight:800;font-size:20px;letter-spacing:-0.03em;color:var(--accent);}
+  .steps{display:flex;gap:6px;}
+  .step-dot{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--cream-dim);
+    transition:background .3s, transform .3s;
+  }
+  .step-dot.active{background:var(--green);transform:scale(1.3);}
+
+  .screen{display:none;padding:22px 20px 10px;animation:fadeIn .35s ease;}
+  .screen.active{display:block;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+
+  h1.page-title{
+    font-family:'Pretendard',sans-serif;
+    font-weight:800;
+    font-size:25px;
+    letter-spacing:-0.03em;
+    margin:6px 0 8px;
+    line-height:1.3;
+  }
+  p.page-sub{
+    color:var(--muted-dark);
+    font-size:14px;
+    margin:0 0 24px;
+    line-height:1.55;
+  }
+  label.field-label{
+    display:block;
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--ink-soft, var(--muted-dark));
+    letter-spacing:-0.01em;
+    margin-bottom:8px;
+    margin-top:20px;
+  }
+  .row2{display:flex;flex-direction:column;gap:10px;}
+  .row2 > *{flex:1;}
+  input[type=text], input[type=number]{
+    width:100%;
+    padding:14px 16px;
+    border:1.5px solid var(--cream-dim);
+    border-radius:14px;
+    font-size:15px;
+    font-family:inherit;
+    background:var(--surface,#fff);
+    color:var(--ink);
+    outline:none;
+    transition:border-color .2s, box-shadow .2s;
+  }
+  input[type=text]:focus, input[type=number]:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .route-line-icon{
+    display:flex;align-items:center;justify-content:center;
+    color:var(--muted);font-size:13px;padding:0 4px;
+  }
+
+  .passenger-list{margin-top:10px;display:flex;flex-direction:column;gap:8px;}
+  .passenger-row{
+    display:flex;align-items:center;gap:10px;
+    background:var(--surface,#fff);border:1.5px solid var(--cream-dim);
+    border-radius:14px;padding:9px 12px;
+  }
+  .passenger-row .avatar{
+    width:32px;height:32px;border-radius:50%;
+    background:var(--accent);color:white;
+    display:flex;align-items:center;justify-content:center;
+    font-size:13px;font-weight:700;flex-shrink:0;
+  }
+  .passenger-row input{border:none;padding:6px 4px;font-size:14px;background:transparent;}
+  .passenger-row input:focus{border:none;box-shadow:none;}
+  .remove-btn{
+    background:none;border:none;color:var(--muted);
+    font-size:18px;cursor:pointer;padding:2px 6px;line-height:1;
+  }
+  .remove-btn:hover{color:var(--danger);}
+  .add-passenger-btn{
+    margin-top:10px;
+    width:100%;
+    padding:12px;
+    border:1.5px dashed color-mix(in srgb, var(--accent) 45%, var(--cream-dim));
+    border-radius:14px;
+    background:none;
+    color:var(--accent-deep, var(--accent));
+    font-family:inherit;font-size:14px;font-weight:600;
+    cursor:pointer;
+    transition:background .15s;
+  }
+  .add-passenger-btn:hover{background:var(--accent-soft);}
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    padding:15px 20px;
+    border-radius:15px;
+    border:none;
+    font-family:'Pretendard',sans-serif;
+    font-size:15px;font-weight:700;letter-spacing:-0.01em;
+    cursor:pointer;
+    transition:transform .15s, filter .15s, box-shadow .2s;
+  }
+  .btn:focus-visible{outline:3px solid var(--accent);outline-offset:2px;}
+  .btn:active{transform:scale(0.98);}
+  .btn-primary{background:var(--accent);color:white;width:100%;margin-top:26px;box-shadow:0 6px 18px color-mix(in srgb, var(--accent) 30%, transparent);}
+  .btn-primary:hover{filter:brightness(1.04);}
+  .btn-primary:disabled{background:var(--cream-dim);color:var(--muted);box-shadow:none;cursor:default;}
+  .btn-ghost{background:none;color:var(--muted-dark);border:1.5px solid var(--cream-dim);}
+  .btn-small{padding:10px 14px;font-size:13px;border-radius:12px;}
+
+  /* Recommendation cards */
+  .rec-card{
+    border:1.5px solid var(--cream-dim);
+    border-radius:var(--radius);
+    padding:18px;
+    margin-bottom:14px;
+    background:var(--surface,#fff);
+    cursor:pointer;
+    transition:border-color .2s, box-shadow .2s, transform .15s;
+  }
+  .rec-card:hover{border-color:var(--accent);}
+  .rec-card.selected{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .rec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .rec-tag{
+    font-size:11px;font-weight:700;color:white;background:var(--accent);
+    padding:4px 10px;border-radius:20px;letter-spacing:-0.01em;
+  }
+  .rec-tag.tag-amber{background:var(--amber);color:var(--ink);}
+  .rec-tag.tag-brown{background:var(--d4);}
+  .rec-title{font-family:'Pretendard',sans-serif;font-weight:800;font-size:17px;letter-spacing:-0.02em;margin:0;}
+  .rec-desc{font-size:12.5px;color:var(--muted-dark);margin:0 0 10px;line-height:1.55;}
+
+  /* Highway strip - signature element */
+  .strip-wrap{position:relative;padding:10px 0 6px;}
+  .strip-track{
+    position:relative;
+    height:22px;
+    border-radius:6px;
+    overflow:hidden;
+    display:flex;
+    background:var(--asphalt);
+  }
+  .strip-seg{
+    height:100%;
+    position:relative;
+    border-right:2px dashed rgba(255,255,255,0.35);
+  }
+  .strip-seg:last-child{border-right:none;}
+  .strip-ruler{
+    display:flex;justify-content:space-between;
+    font-size:10px;color:var(--muted-dark);margin-top:4px;
+  }
+  .strip-legend{display:flex;flex-direction:column;gap:0;margin-top:12px;}
+  .legend-chip{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted-dark);}
+  .legend-dot{width:9px;height:9px;border-radius:3px;flex-shrink:0;}
+
+  .handoff-row{
+    padding:10px 0;
+    border-top:1px dashed var(--cream-dim);
+  }
+  .handoff-row:first-child{border-top:none;padding-top:6px;}
+  .handoff-driver{
+    display:flex;align-items:center;gap:8px;
+    font-size:13.5px;font-weight:600;color:var(--ink);
+  }
+  .driver-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+  .driver-name{flex:1;}
+  .driver-km{color:var(--muted-dark);font-weight:500;font-size:12.5px;}
+  .handoff-loc{
+    margin-top:4px;margin-left:18px;
+    font-size:12px;color:var(--muted-dark);
+  }
+  .handoff-loc b{color:var(--accent-deep, var(--accent));font-weight:700;}
+  .hand-arrive{color:var(--accent-deep, var(--accent));font-weight:600;}
+
+  .reststop-marks{position:relative;height:14px;}
+  .reststop-mark{
+    position:absolute;top:0;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;
+  }
+  .reststop-mark .pin{width:6px;height:6px;border-radius:50%;background:var(--brown);}
+  .reststop-mark .lab{font-size:8.5px;color:var(--muted-dark);white-space:nowrap;margin-top:1px;}
+
+  /* Dashboard screen */
+  .dash-hero{
+    background:var(--asphalt);
+    color:var(--cream);
+    border-radius:16px;
+    padding:20px 18px;
+    margin-top:6px;
+  }
+  .dash-hero .route-label{font-size:12px;color:var(--muted);letter-spacing:0.3px;margin-bottom:2px;}
+  .dash-hero .route-name{font-family:'Black Han Sans',sans-serif;font-size:18px;margin-bottom:14px;}
+  .current-driver-badge{
+    display:flex;align-items:center;gap:12px;
+    background:var(--asphalt-2);
+    border-radius:12px;padding:12px 14px;margin-bottom:14px;
+  }
+  .current-driver-badge .avatar{
+    width:44px;height:44px;border-radius:50%;
+    background:var(--green);color:white;
+    display:flex;align-items:center;justify-content:center;
+    font-size:17px;font-weight:700;flex-shrink:0;
+  }
+  .current-driver-badge .info small{display:block;color:var(--muted);font-size:11px;margin-bottom:2px;}
+  .current-driver-badge .info strong{font-size:17px;}
+
+  .countdown-box{
+    display:flex;justify-content:space-between;align-items:center;
+    background:var(--asphalt-3);
+    border-radius:12px;padding:12px 14px;margin-bottom:16px;
+  }
+  .countdown-box .label{font-size:11.5px;color:var(--muted);}
+  .countdown-box .value{font-family:'Black Han Sans',sans-serif;font-size:22px;color:var(--amber);}
+  .countdown-box .value span{font-size:13px;color:var(--cream);font-family:'Noto Sans KR';}
+
+  .dash-strip .strip-track{height:26px;}
+  .dash-strip .strip-ruler{color:var(--muted);}
+  .progress-marker{
+    position:absolute;top:-8px;
+    width:2px;height:38px;
+    background:var(--cream);
+    transform:translateX(-50%);
+  }
+  .progress-marker::after{
+    content:'▲';position:absolute;top:-10px;left:50%;transform:translateX(-50%);
+    font-size:10px;color:var(--cream);
+  }
+
+  .sim-controls{display:flex;gap:8px;margin-top:16px;}
+  .sim-controls .btn{flex:1;}
+  .btn-dark{background:var(--asphalt-3);color:var(--cream);}
+  .btn-amber{background:var(--amber);color:var(--ink);}
+
+  .demo-note{
+    font-size:11.5px;color:var(--muted-dark);
+    background:var(--cream-dim);
+    border-radius:10px;padding:9px 12px;margin-top:16px;
+    line-height:1.5;
+  }
+
+  .log-section{margin-top:22px;}
+  .log-title{font-family:'Black Han Sans',sans-serif;font-size:15px;margin-bottom:10px;}
+  .log-list{display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto;}
+  .log-item{
+    display:flex;gap:10px;
+    background:white;border:2px solid var(--cream-dim);
+    border-radius:10px;padding:10px 12px;
+    animation:slideIn .3s ease;
+  }
+  @keyframes slideIn{from{opacity:0;transform:translateX(-8px);}to{opacity:1;transform:translateX(0);}}
+  .log-item .dot{width:8px;height:8px;border-radius:50%;background:var(--green);margin-top:5px;flex-shrink:0;}
+  .log-item .txt{font-size:13px;line-height:1.5;}
+  .log-item .txt .t{display:block;font-size:10.5px;color:var(--muted-dark);margin-bottom:2px;}
+  .empty-log{font-size:13px;color:var(--muted);padding:14px 0;text-align:center;}
+
+  .back-link{
+    display:inline-block;margin-bottom:14px;color:var(--muted-dark);
+    font-size:13px;cursor:pointer;font-weight:600;
+  }
+  .back-link:hover{color:var(--green);}
+
+  .shuffle-note{
+    font-size:12px;color:var(--muted-dark);text-align:center;margin-top:6px;
+  }
+
+  .ac-wrap{position:relative;}
+  .ac-wrap input{padding-right:44px;}
+  .search-icon-btn{
+    position:absolute; right:4px; top:50%; transform:translateY(-50%);
+    width:34px;height:34px;border-radius:8px;border:none;background:none;
+    display:flex;align-items:center;justify-content:center;
+    font-size:15px;cursor:pointer;color:var(--muted-dark);
+  }
+  .search-icon-btn:hover{background:var(--cream-dim);}
+  .ac-wrap input.resolved{border-color:var(--green);background:#F3FBF7;}
+  .ac-list{
+    position:absolute;top:calc(100% + 4px);left:0;right:0;
+    background:white;border:2px solid var(--green-light);border-radius:10px;
+    max-height:220px;overflow-y:auto;z-index:20;
+    box-shadow:0 8px 20px rgba(0,0,0,0.12);
+    display:none;
+  }
+  .ac-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--cream-dim);}
+  .ac-item:last-child{border-bottom:none;}
+  .ac-item:hover{background:var(--cream);}
+  .ac-item strong{display:block;font-size:13.5px;}
+  .ac-item span{display:block;font-size:11px;color:var(--muted-dark);margin-top:1px;}
+
+  /* 화면 전환 애니메이션은 .screen에서 처리 */
+
+  .route-map-legend{display:flex;flex-wrap:wrap;gap:12px;margin:10px 0 4px;}
+
+  @media (max-width:380px){
+    .display{font-size:0.95em;}
+    .row2{flex-direction:column;}
+  }
+
+  /* 제비뽑기 두구두구 애니메이션 */
+  .drumroll{
+    background:var(--asphalt);
+    border-radius:12px;
+    padding:16px 14px;
+    margin-top:4px;
+    text-align:center;
+    overflow:hidden;
+  }
+  .drumroll-label{
+    font-size:11px;color:var(--amber);font-weight:700;letter-spacing:1px;margin-bottom:8px;
+  }
+  .drumroll-name{
+    font-family:'Black Han Sans',sans-serif;
+    font-size:28px;
+    color:var(--cream);
+    line-height:1.2;
+    min-height:34px;
+    transition:transform .05s;
+  }
+  .drumroll-name.rolling{animation:shake .12s infinite;}
+  @keyframes shake{
+    0%{transform:translateY(-2px);opacity:0.7;}
+    50%{transform:translateY(2px);opacity:1;}
+    100%{transform:translateY(-2px);opacity:0.7;}
+  }
+  .drumroll-sub{font-size:12px;color:var(--muted);margin-top:6px;}
+  .reveal-row{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:9px 12px;margin-top:7px;
+    background:white;border:2px solid var(--cream-dim);border-radius:10px;
+    opacity:0;transform:translateY(8px);
+    animation:popIn .35s forwards;
+  }
+  @keyframes popIn{to{opacity:1;transform:translateY(0);}}
+  .reveal-row .who{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;}
+  .reveal-row .who .legend-dot{width:11px;height:11px;border-radius:3px;}
+  .reveal-row .dist{font-size:13px;color:var(--muted-dark);font-weight:700;}
+  .reveal-row .rank-emoji{font-size:15px;}
+  .btn-reroll{
+    margin-top:12px;width:100%;
+    background:var(--accent-deep, var(--accent));color:white;
+    padding:12px;border:none;border-radius:12px;
+    font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;
+  }
+  .btn-reroll:hover{filter:brightness(1.08);}
+  .btn-reroll:disabled{opacity:0.5;cursor:default;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-badge">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M5 9L12 5L19 9" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M19 15L12 19L5 15" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+          <circle cx="12" cy="12" r="2.5" fill="#fff"/>
+        </svg>
+      </div>
+      <div class="brand-name">바통</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <button id="theme-toggle" aria-label="테마 색상" style="width:26px;height:26px;border-radius:50%;border:2px solid #fff;background:var(--accent);cursor:pointer;box-shadow:0 0 0 1px var(--cream-dim);"></button>
+      <div class="steps">
+        <div class="step-dot" data-step="0"></div>
+        <div class="step-dot" data-step="1"></div>
+        <div class="step-dot" data-step="2"></div>
+        <div class="step-dot" data-step="3"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="theme-sheet" style="display:none;padding:14px 20px 4px;border-bottom:1px solid var(--cream-dim);">
+    <div style="font-size:12px;font-weight:700;color:var(--muted-dark);margin-bottom:10px;">포인트 색상 고르기</div>
+    <div id="theme-swatches" style="display:flex;gap:12px;"></div>
+  </div>
+
+  <!-- SCREEN 0: 장소 -->
+  <div class="screen active" id="screen-location">
+    <h1 class="page-title">어디로 가세요?</h1>
+    <p class="page-sub">출발지와 도착지를 검색해 주세요.</p>
+
+    <label class="field-label">출발지</label>
+    <div class="ac-wrap">
+      <input type="text" id="input-origin" value="" placeholder="출발지 검색 (예: 서울역)" autocomplete="off">
+      <button type="button" class="search-icon-btn" id="search-origin" aria-label="출발지 검색">🔍</button>
+      <div class="ac-list" id="ac-origin"></div>
+    </div>
+
+    <label class="field-label">도착지</label>
+    <div class="ac-wrap">
+      <input type="text" id="input-dest" value="" placeholder="도착지 검색 (예: 양양)" autocomplete="off">
+      <button type="button" class="search-icon-btn" id="search-dest" aria-label="도착지 검색">🔍</button>
+      <div class="ac-list" id="ac-dest"></div>
+    </div>
+
+    <div id="location-map-wrap" style="display:none;margin-top:18px;">
+      <label class="field-label">경로 미리보기</label>
+      <div id="kakao-map" style="width:100%;height:200px;border-radius:14px;border:1.5px solid var(--cream-dim);"></div>
+      <div id="km-hint" style="font-size:12px;color:var(--muted-dark);margin-top:8px;text-align:center;"></div>
+    </div>
+
+    <button class="btn btn-primary" id="btn-to-passengers" disabled>다음</button>
+  </div>
+
+  <!-- SCREEN 1: 인원 -->
+  <div class="screen" id="screen-passengers">
+    <div class="back-link" id="back-to-location">← 장소 다시 설정</div>
+    <h1 class="page-title">누가 함께 가나요?</h1>
+    <p class="page-sub">교대할 사람을 모두 추가해 주세요. 별명이나 이름을 입력할 수 있어요.</p>
+
+    <label class="field-label">탑승 인원</label>
+    <div class="passenger-list" id="passenger-list"></div>
+    <button class="add-passenger-btn" id="btn-add-passenger">+ 인원 추가</button>
+
+    <button class="btn btn-primary" id="btn-to-rec">배분 방식 보러가기</button>
+  </div>
+
+  <!-- SCREEN 2: 배분 선택 -->
+  <div class="screen" id="screen-rec">
+    <div class="back-link" id="back-to-passengers">← 인원 다시 설정</div>
+    <h1 class="page-title">어떻게 나눠 탈까요?</h1>
+    <p class="page-sub">배분 방식을 골라주세요. 각 방식마다 교대 지점과 담당 구간이 달라져요.</p>
+
+    <div id="rec-map" style="width:100%;height:200px;border-radius:14px;border:1.5px solid var(--cream-dim);margin-bottom:8px;"></div>
+    <div class="route-map-legend" id="rec-map-legend"></div>
+
+    <div id="rec-cards"></div>
+
+    <button class="btn btn-primary" id="btn-to-dash" disabled>이 방식으로 출발하기</button>
+  </div>
+
+  <!-- SCREEN 2: 주행 대시보드 -->
+  <div class="screen" id="screen-dash">
+    <div class="back-link" id="back-to-rec">← 배분 방식 다시 고르기</div>
+
+    <div class="dash-hero">
+      <div class="route-label" id="dash-route-label">서울 → 양양</div>
+      <div class="route-name display" id="dash-plan-name">균등 분배</div>
+
+      <div class="current-driver-badge">
+        <div class="avatar" id="cd-avatar">혜</div>
+        <div class="info">
+          <small>현재 운전자</small>
+          <strong id="cd-name">혜진</strong>
+        </div>
+      </div>
+
+      <div class="countdown-box">
+        <div>
+          <div class="label">다음 교대까지</div>
+          <div class="value" id="cd-remaining">32<span>km</span></div>
+        </div>
+        <div style="text-align:right;">
+          <div class="label">다음 교대 지점</div>
+          <div class="value" style="font-size:15px;color:var(--cream);" id="cd-next-stop">휴게소 2</div>
+        </div>
+      </div>
+
+      <div class="dash-strip strip-wrap">
+        <div class="reststop-marks" id="dash-reststop-marks"></div>
+        <div class="strip-track" id="dash-strip-track"></div>
+        <div class="strip-ruler">
+          <span id="dash-km-start">0km</span>
+          <span id="dash-km-end">230km</span>
+        </div>
+      </div>
+
+      <div class="sim-controls">
+        <button class="btn btn-dark btn-small" id="btn-advance">+10km 진행</button>
+        <button class="btn btn-amber btn-small" id="btn-autoplay">자동 진행 ▶</button>
+        <button class="btn btn-dark btn-small" id="btn-reset">처음부터</button>
+      </div>
+
+      <div class="demo-note">🚧 프로토타입 데모: 휴게소·교통 정보는 예시 데이터예요. 실제 서비스에서는 지도 API로 실시간 위치와 정확한 휴게소 정보를 반영할 수 있어요.</div>
+    </div>
+
+    <div class="log-section">
+      <div class="log-title display">교대 알림</div>
+      <div class="log-list" id="log-list">
+        <div class="empty-log">여정을 진행하면 교대 알림이 여기에 쌓여요.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const COLORS = ['#2FB89E','#F2A93B','#5B8DEF','#E2725B','#9B7EDE','#E86FA9'];
+
+  const state = {
+    origin:'서울', destination:'양양', totalKm:230,
+    passengers:[{name:'탑승자 1'},{name:'탑승자 2'},{name:'탑승자 3'},{name:'탑승자 4'}],
+    restStops:[], plans:{}, selectedPlanKey:null,
+    progressKm:0, log:[], autoplay:null, lastHandoffIndex:-1,
+    originCoord:null, destCoord:null, realRestStops:null
+  };
+
+  // ---------- helpers ----------
+  function initial(name){ return name ? name.trim().slice(0,1) : '?'; }
+  function fmt(n){ return Math.round(n*10)/10; }
+
+  function buildRestStops(totalKm){
+    if(state.realRestStops && state.realRestStops.length){
+      return state.realRestStops.map(s=>({name:s.name, km: fmt(totalKm*s.ratio)}));
+    }
+    const ratios = [0.24, 0.52, 0.78];
+    return ratios.map((r,i)=>({name:'휴게소 '+(i+1), km: fmt(totalKm*r)}));
+  }
+
+  // ---------- kakao map integration ----------
+  let mapInstance=null, mapMarkers=[];
+  function initMap(){
+    const container = document.getElementById('kakao-map');
+    if(!container || typeof kakao==='undefined' || !kakao.maps) return;
+    mapInstance = new kakao.maps.Map(container, {
+      center: new kakao.maps.LatLng(37.5665, 126.9780),
+      level: 10
+    });
+  }
+
+  function makeMarkerSvg(label, color, type){
+    const w = 20, h = 26;
+    const bg = type==='start' ? '#3182F6' : type==='end' ? '#F2765C' : '#F2A93B';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      <path d="M${w/2} ${h} L${w/2-3.5} ${h-6} Q0 ${h-9} 0 8 Q0 0 8 0 L${w-8} 0 Q${w} 0 ${w} 8 Q${w} ${h-9} ${w/2+3.5} ${h-6} Z" fill="${bg}" stroke="#fff" stroke-width="1.5"/>
+      <circle cx="${w/2}" cy="9" r="3.5" fill="#fff"/>
+    </svg>`;
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
+  function makeLabelOverlay(pos, text, map){
+    const content = document.createElement('div');
+    content.style.cssText = 'background:#fff;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;font-family:Pretendard,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.12);white-space:nowrap;border:1.5px solid var(--cream-dim,#eee);color:#1E1B18;transform:translateY(-6px);';
+    content.textContent = text;
+    const overlay = new kakao.maps.CustomOverlay({
+      position: new kakao.maps.LatLng(pos.lat, pos.lng),
+      content: content,
+      yAnchor: 2.4,
+      map: map
+    });
+    return overlay;
+  }
+
+  function updateMapPreview(origin, dest, stops){
+    if(!mapInstance) return;
+    mapMarkers.forEach(m=>m.setMap(null));
+    mapMarkers=[];
+    const bounds = new kakao.maps.LatLngBounds();
+    function addMarker(pos, label, type){
+      const imgSrc = makeMarkerSvg(label, getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(), type);
+      const sz = new kakao.maps.Size(20,26);
+      const img = new kakao.maps.MarkerImage(imgSrc, sz);
+      const marker = new kakao.maps.Marker({position:new kakao.maps.LatLng(pos.lat,pos.lng), map:mapInstance, image:img});
+      mapMarkers.push(marker);
+      bounds.extend(marker.getPosition());
+      if(label){
+        const ov = makeLabelOverlay(pos, label, mapInstance);
+        mapMarkers.push(ov);
+      }
+    }
+    addMarker(origin, state.origin, 'start');
+    addMarker(dest, state.destination, 'end');
+    (stops||[]).forEach(s=>addMarker({lat:s.lat,lng:s.lng}, s.name, 'stop'));
+    mapInstance.setBounds(bounds);
+  }
+
+  function haversineKm(a,b){
+    const R=6371;
+    const dLat=(b.lat-a.lat)*Math.PI/180;
+    const dLng=(b.lng-a.lng)*Math.PI/180;
+    const lat1=a.lat*Math.PI/180, lat2=b.lat*Math.PI/180;
+    const h=Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+    return 2*R*Math.asin(Math.sqrt(h));
+  }
+
+  function geocodeAddress(query){
+    return new Promise((resolve,reject)=>{
+      if(typeof kakao==='undefined' || !kakao.maps || !kakao.maps.services){ reject(new Error('SDK_NOT_LOADED')); return; }
+      const places = new kakao.maps.services.Places();
+      places.keywordSearch(query, (data,status)=>{
+        if(status===kakao.maps.services.Status.OK && data.length>0){
+          resolve({lat:+data[0].y, lng:+data[0].x});
+        } else {
+          const placesStatus = status;
+          const geocoder = new kakao.maps.services.Geocoder();
+          geocoder.addressSearch(query, (result,status2)=>{
+            if(status2===kakao.maps.services.Status.OK && result.length>0){
+              resolve({lat:+result[0].y, lng:+result[0].x});
+            } else {
+              reject(new Error(`places:${placesStatus} / address:${status2}`));
+            }
+          });
+        }
+      });
+    });
+  }
+
+  function searchRestStopsAlongRoute(origin, dest){
+    const directKm = haversineKm(origin, dest);
+    return new Promise((resolve)=>{
+      if(typeof kakao==='undefined' || !kakao.maps || !kakao.maps.services){ resolve(null); return; }
+      const places = new kakao.maps.services.Places();
+      const bounds = new kakao.maps.LatLngBounds();
+      bounds.extend(new kakao.maps.LatLng(origin.lat, origin.lng));
+      bounds.extend(new kakao.maps.LatLng(dest.lat, dest.lng));
+
+      // 거리에 따라 다른 종류의 정차 지점 검색
+      // 짧은 거리(50km 미만): 편의점·주유소·CU 등
+      // 중간 거리(50~150km): 졸음쉼터·주유소·휴게소
+      // 긴 거리(150km+): 고속도로 휴게소
+      let queries;
+      if(directKm < 50){
+        queries = ['편의점','주유소','휴게소'];
+      } else if(directKm < 150){
+        queries = ['휴게소','졸음쉼터','주유소'];
+      } else {
+        queries = ['고속도로 휴게소','휴게소','주유소'];
+      }
+
+      // 여러 쿼리 결과 합치기
+      const allResults = [];
+      let done = 0;
+      queries.forEach(q=>{
+        places.keywordSearch(q, (data,status)=>{
+          done++;
+          if(status===kakao.maps.services.Status.OK && data && data.length){
+            data.forEach(d=>{
+              const p={lat:+d.y,lng:+d.x};
+              const dOrigin = haversineKm(origin,p);
+              const dDest = haversineKm(p,dest);
+              const ratio = dOrigin/((dOrigin+dDest)||1);
+              // 경로에서 너무 멀리 떨어진 것 제외 (직선 우회비율 체크)
+              const directRoute = dOrigin + dDest;
+              const detour = directRoute / (directKm || 1);
+              if(ratio>0.05 && ratio<0.95 && detour < 1.6){
+                allResults.push({name:d.place_name, category:q, lat:p.lat, lng:p.lng, ratio, detour});
+              }
+            });
+          }
+          if(done===queries.length){
+            if(allResults.length===0){ resolve(null); return; }
+            // 중복 제거 (이름 기준)
+            const seen = new Set();
+            const unique = allResults.filter(s=>{
+              if(seen.has(s.name)) return false;
+              seen.add(s.name); return true;
+            }).sort((a,b)=>a.ratio-b.ratio);
+
+            // 인원에 따라 정차 지점 개수: 인원-1 만큼 필요 (n명이면 n-1번 교대)
+            // 최대 5개, 최소 1개
+            const passengerCount = (state.passengers && state.passengers.length) || 4;
+            const need = Math.max(1, Math.min(5, passengerCount-1));
+
+            // ratio가 균등하게 분포하도록 선택
+            const targets = [];
+            for(let i=1;i<=need;i++){ targets.push(i/(need+1)); }
+            const picks=[];
+            targets.forEach(t=>{
+              let best=null, bd=Infinity;
+              unique.forEach(s=>{
+                const d=Math.abs(s.ratio-t);
+                if(d<bd && !picks.find(p=>p.name===s.name)){ bd=d; best=s; }
+              });
+              if(best) picks.push(best);
+            });
+            resolve(picks.length ? picks : null);
+          }
+        }, {bounds, size:15});
+      });
+    });
+  }
+
+  function nearestRestStop(km, restStops){
+    let best=null, bestDist=Infinity;
+    restStops.forEach(rs=>{
+      const d=Math.abs(rs.km-km);
+      if(d<bestDist){bestDist=d; best=rs;}
+    });
+    return best;
+  }
+
+  // ---------- plan generation ----------
+  function planEqual(passengers, totalKm){
+    const n = passengers.length;
+    const each = totalKm/n;
+    const segs=[]; let cum=0;
+    for(let i=0;i<n;i++){
+      segs.push({driverIdx:i, startKm:cum, endKm:fmt(cum+each)});
+      cum+=each;
+    }
+    segs[segs.length-1].endKm = totalKm;
+    return segs;
+  }
+
+  function planTraffic(passengers, totalKm){
+    // mock congestion zone around 45%~62% of the route
+    const n = passengers.length;
+    const base = totalKm/n;
+    const congStart = totalKm*0.45, congEnd = totalKm*0.62;
+    const segs=[]; let cum=0;
+    for(let i=0;i<n;i++){
+      let len = base;
+      const segEnd = cum+len;
+      const overlap = Math.max(0, Math.min(segEnd,congEnd)-Math.max(cum,congStart));
+      if(overlap>0){ len = len - overlap*0.5; } // shorten segment touching congestion
+      segs.push({driverIdx:i, startKm:cum, endKm:fmt(cum+len)});
+      cum+=len;
+    }
+    // redistribute remainder to last driver to hit totalKm exactly
+    const diff = totalKm - cum;
+    for(let i=0;i<segs.length;i++){ segs[i].endKm = fmt(segs[i].endKm + diff*((i+1)/segs.length)); if(i>0) segs[i].startKm=segs[i-1].endKm; }
+    segs[segs.length-1].endKm = totalKm;
+    return segs;
+  }
+
+  function planRandom(passengers, totalKm){
+    const n = passengers.length;
+    if(n===1) return [{driverIdx:0,startKm:0,endKm:totalKm}];
+    // random cut points
+    let cuts=[];
+    for(let i=0;i<n-1;i++){ cuts.push(Math.random()); }
+    cuts.sort((a,b)=>a-b);
+    const bounds=[0,...cuts.map(c=>fmt(c*totalKm)),totalKm];
+    // random order of drivers assigned to each position
+    const order = passengers.map((_,i)=>i);
+    for(let i=order.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [order[i],order[j]]=[order[j],order[i]];
+    }
+    const segs=[];
+    for(let i=0;i<n;i++){
+      segs.push({driverIdx:order[i], startKm:bounds[i], endKm:bounds[i+1]});
+    }
+    return segs;
+  }
+
+  function computePlans(){
+    state.restStops = buildRestStops(state.totalKm);
+    state.plans = {
+      equal: {key:'equal', title:'균등 분배', tag:'기본', tagClass:'', desc:'모두 똑같은 거리를 나눠서 운전해요. 가장 공평하고 예측이 쉬워요.', segs: planEqual(state.passengers, state.totalKm)},
+      traffic: {key:'traffic', title:'교통 상황 고려', tag:'추천', tagClass:'tag-amber', desc:'혼잡 구간을 피해 교대 타이밍을 조정해요. 막히는 도로에서 교대하지 않도록 배려해요.', segs: planTraffic(state.passengers, state.totalKm)},
+      random: {key:'random', title:'제비뽑기(랜덤)', tag:'긴장감', tagClass:'tag-brown', desc:'누가 얼마나 운전할지 무작위로 정해요. 누구는 짧게, 누구는 길게 — 결과는 그날의 운!', segs: planRandom(state.passengers, state.totalKm)}
+    };
+  }
+
+  // ---------- rendering: passenger list ----------
+  function renderPassengerList(){
+    const el = document.getElementById('passenger-list');
+    el.innerHTML='';
+    state.passengers.forEach((p,i)=>{
+      const row=document.createElement('div');
+      row.className='passenger-row';
+      row.innerHTML = `
+        <div class="avatar" style="background:${COLORS[i%COLORS.length]}">${initial(p.name)}</div>
+        <input type="text" data-idx="${i}" value="${p.name}" placeholder="별명 입력">
+        <button class="remove-btn" data-idx="${i}" aria-label="삭제">×</button>
+      `;
+      el.appendChild(row);
+    });
+    el.querySelectorAll('input').forEach(inp=>{
+      inp.addEventListener('input', e=>{
+        const idx = +e.target.dataset.idx;
+        state.passengers[idx].name = e.target.value;
+        const avatar = e.target.closest('.passenger-row').querySelector('.avatar');
+        avatar.textContent = initial(e.target.value);
+      });
+    });
+    el.querySelectorAll('.remove-btn').forEach(btn=>{
+      btn.addEventListener('click', e=>{
+        if(state.passengers.length<=1) return;
+        const idx = +e.target.dataset.idx;
+        state.passengers.splice(idx,1);
+        renderPassengerList();
+      });
+    });
+  }
+
+  document.getElementById('btn-add-passenger').addEventListener('click', ()=>{
+    if(state.passengers.length>=8) return;
+    state.passengers.push({name:'탑승자 '+(state.passengers.length+1)});
+    renderPassengerList();
+  });
+
+  // ---------- strip rendering (shared) ----------
+  function renderStrip(trackEl, restMarksEl, segs, totalKm, passengers, options){
+    options = options || {};
+    trackEl.innerHTML='';
+    segs.forEach(seg=>{
+      const widthPct = ((seg.endKm-seg.startKm)/totalKm*100);
+      const div = document.createElement('div');
+      div.className='strip-seg';
+      div.style.width = widthPct+'%';
+      div.style.background = COLORS[seg.driverIdx % COLORS.length];
+      trackEl.appendChild(div);
+    });
+    if(restMarksEl){
+      restMarksEl.innerHTML='';
+      state.restStops.forEach(rs=>{
+        const pct = rs.km/totalKm*100;
+        const mark=document.createElement('div');
+        mark.className='reststop-mark';
+        mark.style.left = pct+'%';
+        mark.innerHTML = `<div class="pin"></div><div class="lab">${rs.name}</div>`;
+        restMarksEl.appendChild(mark);
+      });
+    }
+    if(options.progressKm!==undefined){
+      const marker=document.createElement('div');
+      marker.className='progress-marker';
+      marker.style.left = (options.progressKm/totalKm*100)+'%';
+      trackEl.style.position='relative';
+      trackEl.appendChild(marker);
+    }
+  }
+
+  function renderLegend(container, segs, passengers){
+    container.innerHTML='';
+    segs.forEach((seg,i)=>{
+      const km = fmt(seg.endKm-seg.startKm);
+      const isLast = i===segs.length-1;
+      const handoffText = isLast
+        ? `<span class="hand-arrive">🏁 ${state.destination} 도착</span>`
+        : (()=>{
+            const rs = nearestRestStop(seg.endKm, state.restStops);
+            if(rs) return `<span class="hand-loc">📍 <b>${rs.name}</b>에서 교대</span>`;
+            return `<span class="hand-loc">📍 ${fmt(seg.endKm)}km 지점에서 교대</span>`;
+          })();
+      const row=document.createElement('div');
+      row.className='handoff-row';
+      row.innerHTML = `
+        <div class="handoff-driver">
+          <span class="driver-dot" style="background:${COLORS[seg.driverIdx%COLORS.length]}"></span>
+          <span class="driver-name">${passengers[seg.driverIdx].name}</span>
+          <span class="driver-km">${km}km</span>
+        </div>
+        <div class="handoff-loc">${handoffText}</div>
+      `;
+      container.appendChild(row);
+    });
+  }
+
+  // ---------- route path helpers (for map polyline) ----------
+  function buildRoutePath(){
+    const wps = (state.realRestStops||[]).slice().sort((a,b)=>a.ratio-b.ratio);
+    const pts = [
+      {lat:state.originCoord.lat, lng:state.originCoord.lng},
+      ...wps.map(w=>({lat:w.lat, lng:w.lng})),
+      {lat:state.destCoord.lat, lng:state.destCoord.lng}
+    ];
+    let dists=[0];
+    for(let i=1;i<pts.length;i++){ dists.push(dists[i-1]+haversineKm(pts[i-1],pts[i])); }
+    const total = dists[dists.length-1] || 1;
+    return pts.map((p,i)=>({...p, cum: dists[i]/total}));
+  }
+
+  function interpolateOnPath(path, t){
+    for(let i=1;i<path.length;i++){
+      if(t<=path[i].cum || i===path.length-1){
+        const a=path[i-1], b=path[i];
+        const span=(b.cum-a.cum)||1;
+        const local=(t-a.cum)/span;
+        return {lat:a.lat+(b.lat-a.lat)*local, lng:a.lng+(b.lng-a.lng)*local};
+      }
+    }
+    return path[path.length-1];
+  }
+
+  function sliceSegmentPoints(path, t0, t1){
+    const pts=[interpolateOnPath(path,t0)];
+    path.forEach(p=>{ if(p.cum>t0 && p.cum<t1) pts.push({lat:p.lat,lng:p.lng}); });
+    pts.push(interpolateOnPath(path,t1));
+    return pts;
+  }
+
+  let recMapInstance=null, recMapMarkers=[], recMapLines=[];
+  function initRecMap(){
+    const container = document.getElementById('rec-map');
+    if(!container || typeof kakao==='undefined' || !kakao.maps) return;
+    recMapInstance = new kakao.maps.Map(container, {
+      center: new kakao.maps.LatLng(state.originCoord.lat, state.originCoord.lng),
+      level: 10
+    });
+  }
+
+  function drawPlanOnRecMap(planKey){
+    if(!recMapInstance || !state.originCoord || !state.destCoord) return;
+    recMapLines.forEach(l=>l.setMap(null)); recMapLines=[];
+    recMapMarkers.forEach(m=>m.setMap(null)); recMapMarkers=[];
+
+    const plan = state.plans[planKey];
+    const path = buildRoutePath();
+    const bounds = new kakao.maps.LatLngBounds();
+
+    plan.segs.forEach(seg=>{
+      const t0=seg.startKm/state.totalKm, t1=seg.endKm/state.totalKm;
+      const pts = sliceSegmentPoints(path,t0,t1).map(p=>{
+        const ll = new kakao.maps.LatLng(p.lat,p.lng);
+        bounds.extend(ll);
+        return ll;
+      });
+      const line = new kakao.maps.Polyline({path:pts, strokeWeight:3, strokeColor:COLORS[seg.driverIdx%COLORS.length], strokeOpacity:0.75, strokeStyle:'solid'});
+      line.setMap(recMapInstance);
+      recMapLines.push(line);
+    });
+
+    function addMarker(pos,label,type){
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+      const imgSrc = makeMarkerSvg(label, accent, type);
+      const sz = new kakao.maps.Size(20,26);
+      const img = new kakao.maps.MarkerImage(imgSrc, sz);
+      const marker = new kakao.maps.Marker({position:new kakao.maps.LatLng(pos.lat,pos.lng), map:recMapInstance, image:img});
+      recMapMarkers.push(marker);
+      if(label){
+        const ov = makeLabelOverlay(pos, label, recMapInstance);
+        recMapMarkers.push(ov);
+      }
+    }
+    addMarker(state.originCoord, state.origin, 'start');
+    addMarker(state.destCoord, state.destination, 'end');
+    (state.realRestStops||[]).forEach(s=>addMarker({lat:s.lat,lng:s.lng}, s.name, 'stop'));
+
+    recMapInstance.setBounds(bounds);
+
+    const legend = document.getElementById('rec-map-legend');
+    legend.innerHTML='';
+    plan.segs.forEach(seg=>{
+      const chip=document.createElement('div');
+      chip.className='legend-chip';
+      chip.innerHTML = `<span class="legend-dot" style="background:${COLORS[seg.driverIdx%COLORS.length]}"></span>${state.passengers[seg.driverIdx].name} · ${fmt(seg.endKm-seg.startKm)}km`;
+      legend.appendChild(chip);
+    });
+  }
+
+  // ---------- recommendation screen ----------
+  let rollTimer=null;
+  function renderRecCards(){
+    const wrap = document.getElementById('rec-cards');
+    wrap.innerHTML='';
+    ['equal','traffic','random'].forEach(key=>{
+      const plan = state.plans[key];
+      const card = document.createElement('div');
+      card.className='rec-card';
+      card.dataset.key = key;
+      const bodyHtml = key==='random'
+        ? `<div class="drumroll" id="drumroll-box">
+             <div class="drumroll-label">두구두구...</div>
+             <div class="drumroll-name" id="drumroll-name">?</div>
+             <div class="drumroll-sub">카드를 누르면 추첨을 시작해요</div>
+           </div>`
+        : `<div class="strip-legend legend-${key}"></div>`;
+      card.innerHTML = `
+        <div class="rec-head">
+          <h3 class="rec-title">${plan.title}</h3>
+          <span class="rec-tag ${plan.tagClass}">${plan.tag}</span>
+        </div>
+        <p class="rec-desc">${plan.desc}</p>
+        ${bodyHtml}
+      `;
+      wrap.appendChild(card);
+      if(key!=='random'){
+        renderLegend(card.querySelector('.legend-'+key), plan.segs, state.passengers);
+      }
+
+      card.addEventListener('click', ()=>{
+        wrap.querySelectorAll('.rec-card').forEach(c=>c.classList.remove('selected'));
+        card.classList.add('selected');
+        state.selectedPlanKey = key;
+        document.getElementById('btn-to-dash').disabled = false;
+        drawPlanOnRecMap(key);
+        if(key==='random') runDrumroll();
+      });
+    });
+    if(!recMapInstance) initRecMap();
+    const defaultKey = 'equal';
+    state.selectedPlanKey = defaultKey;
+    const defaultCard = wrap.querySelector('[data-key="'+defaultKey+'"]');
+    if(defaultCard) defaultCard.classList.add('selected');
+    document.getElementById('btn-to-dash').disabled = false;
+    drawPlanOnRecMap(defaultKey);
+  }
+
+  function runDrumroll(){
+    if(rollTimer){ clearInterval(rollTimer); rollTimer=null; }
+    // 매번 새로 추첨
+    state.plans.random.segs = planRandom(state.passengers, state.totalKm);
+    const plan = state.plans.random;
+    const box = document.getElementById('drumroll-box');
+    const nameEl = document.getElementById('drumroll-name');
+    if(!box || !nameEl) return;
+    box.querySelector('.drumroll-label').textContent = '두구두구...';
+    box.querySelector('.drumroll-sub').textContent = '누가 얼마나 운전하게 될까요?';
+    nameEl.classList.add('rolling');
+    document.getElementById('btn-to-dash').disabled = true;
+
+    // 주행 순서대로 정렬된 세그먼트
+    const ordered = plan.segs.slice();
+    const names = state.passengers.map(p=>p.name);
+
+    // 이름이 빠르게 바뀌는 룰렛
+    let tick=0;
+    rollTimer = setInterval(()=>{
+      nameEl.textContent = names[tick % names.length];
+      tick++;
+    }, 80);
+
+    // 2초 후 결과 확정, 순위 하나씩 공개
+    setTimeout(()=>{
+      clearInterval(rollTimer); rollTimer=null;
+      nameEl.classList.remove('rolling');
+
+      // 거리 기준 내림차순 순위 (가장 많이 운전 = 당첨(?))
+      const ranked = ordered.map((seg,i)=>({
+        idx: seg.driverIdx,
+        km: fmt(seg.endKm-seg.startKm),
+        order: i
+      })).sort((a,b)=>b.km-a.km);
+
+      const longest = ranked[0];
+      nameEl.textContent = state.passengers[longest.idx].name;
+      box.querySelector('.drumroll-label').textContent = '최장 거리 당첨 🚗';
+      box.querySelector('.drumroll-sub').textContent = `${longest.km}km 운전! 오늘의 에이스`;
+
+      // 순위 리스트 하나씩 등장
+      let listHtml = '';
+      const medals = ['🥇','🥈','🥉'];
+      ranked.forEach((r,rank)=>{
+        listHtml += `<div class="reveal-row" style="animation-delay:${rank*0.15}s">
+          <span class="who"><span class="legend-dot" style="background:${COLORS[r.idx%COLORS.length]}"></span>${state.passengers[r.idx].name}</span>
+          <span class="dist"><span class="rank-emoji">${medals[rank]||''}</span> ${r.km}km</span>
+        </div>`;
+      });
+      // 기존 reveal 제거 후 추가
+      box.querySelectorAll('.reveal-row').forEach(e=>e.remove());
+      box.insertAdjacentHTML('beforeend', listHtml);
+
+      // 다시 뽑기 버튼
+      if(!box.querySelector('.btn-reroll')){
+        const reroll = document.createElement('button');
+        reroll.className='btn-reroll';
+        reroll.textContent='🎲 다시 뽑기';
+        reroll.addEventListener('click', (e)=>{ e.stopPropagation(); runDrumroll(); });
+        box.appendChild(reroll);
+      }
+
+      document.getElementById('btn-to-dash').disabled = false;
+      drawPlanOnRecMap('random');
+    }, 2000);
+  }
+
+  // ---------- dashboard ----------
+  function initDashboard(){
+    const plan = state.plans[state.selectedPlanKey];
+    state.progressKm = 0;
+    state.lastHandoffIndex = -1;
+    state.log = [];
+    document.getElementById('dash-route-label').textContent = `${state.origin} → ${state.destination}`;
+    document.getElementById('dash-plan-name').textContent = plan.title;
+    document.getElementById('dash-km-start').textContent = '0km';
+    document.getElementById('dash-km-end').textContent = state.totalKm+'km';
+    renderLogEmpty();
+    updateDashboard();
+  }
+
+  function currentSegmentIndex(km){
+    const plan = state.plans[state.selectedPlanKey];
+    for(let i=0;i<plan.segs.length;i++){
+      const seg = plan.segs[i];
+      if(km < seg.endKm || i===plan.segs.length-1) return i;
+    }
+    return plan.segs.length-1;
+  }
+
+  function updateDashboard(){
+    const plan = state.plans[state.selectedPlanKey];
+    const idx = currentSegmentIndex(state.progressKm);
+    const seg = plan.segs[idx];
+    const driver = state.passengers[seg.driverIdx];
+
+    document.getElementById('cd-avatar').textContent = initial(driver.name);
+    document.getElementById('cd-avatar').style.background = COLORS[seg.driverIdx % COLORS.length];
+    document.getElementById('cd-name').textContent = driver.name;
+
+    const remaining = Math.max(0, fmt(seg.endKm - state.progressKm));
+    document.getElementById('cd-remaining').innerHTML = remaining + '<span>km</span>';
+
+    const isLast = idx===plan.segs.length-1;
+    const nextStopEl = document.getElementById('cd-next-stop');
+    if(isLast && state.progressKm>=state.totalKm){
+      nextStopEl.textContent = '도착 완료';
+    } else {
+      const rs = nearestRestStop(seg.endKm, state.restStops);
+      nextStopEl.textContent = isLast ? '목적지 도착' : (rs ? rs.name+' 예정' : '교대 지점');
+    }
+
+    renderStrip(document.getElementById('dash-strip-track'), document.getElementById('dash-reststop-marks'), plan.segs, state.totalKm, state.passengers, {progressKm: Math.min(state.progressKm, state.totalKm)});
+  }
+
+  function addLog(text, subtitle){
+    const list = document.getElementById('log-list');
+    if(list.querySelector('.empty-log')) list.innerHTML='';
+    const item=document.createElement('div');
+    item.className='log-item';
+    item.innerHTML = `<div class="dot"></div><div class="txt"><span class="t">${subtitle}</span>${text}</div>`;
+    list.prepend(item);
+  }
+
+  function renderLogEmpty(){
+    document.getElementById('log-list').innerHTML = '<div class="empty-log">여정을 진행하면 교대 알림이 여기에 쌓여요.</div>';
+  }
+
+  function checkHandoff(prevKm, newKm){
+    const plan = state.plans[state.selectedPlanKey];
+    const prevIdx = currentSegmentIndex(Math.min(prevKm, state.totalKm-0.01));
+    const newIdx = currentSegmentIndex(Math.min(newKm, state.totalKm-0.01));
+    if(newIdx>prevIdx && newIdx>state.lastHandoffIndex){
+      for(let i=prevIdx; i<newIdx; i++){
+        const finishing = state.passengers[plan.segs[i].driverIdx];
+        const next = state.passengers[plan.segs[i+1].driverIdx];
+        const rs = nearestRestStop(plan.segs[i].endKm, state.restStops);
+        addLog(`${finishing.name}님 고생하셨어요! 이제 ${next.name}님이 운전을 이어갈게요. (${rs ? rs.name+' 근처' : plan.segs[i].endKm+'km 지점'})`, `${fmt(plan.segs[i].endKm)}km 지점 · 교대`);
+      }
+      state.lastHandoffIndex = newIdx;
+    }
+    if(newKm>=state.totalKm && prevKm<state.totalKm){
+      addLog(`${state.destination} 도착! 모두 고생 많으셨어요 🎉`, '도착');
+      stopAutoplay();
+    }
+  }
+
+  document.getElementById('btn-advance').addEventListener('click', ()=>{
+    advance(10);
+  });
+  document.getElementById('btn-reset').addEventListener('click', ()=>{
+    stopAutoplay();
+    initDashboard();
+  });
+  document.getElementById('btn-autoplay').addEventListener('click', (e)=>{
+    if(state.autoplay){ stopAutoplay(); }
+    else{
+      state.autoplay = setInterval(()=>advance(6), 550);
+      e.target.textContent = '일시정지 ⏸';
+    }
+  });
+  function stopAutoplay(){
+    if(state.autoplay){ clearInterval(state.autoplay); state.autoplay=null; }
+    document.getElementById('btn-autoplay').textContent = '자동 진행 ▶';
+  }
+  function advance(km){
+    const prev = state.progressKm;
+    state.progressKm = Math.min(state.totalKm, fmt(state.progressKm+km));
+    checkHandoff(prev, state.progressKm);
+    updateDashboard();
+    if(state.progressKm>=state.totalKm) stopAutoplay();
+  }
+
+  // ---------- navigation ----------
+  function showScreen(name){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+    document.getElementById('screen-'+name).classList.add('active');
+    const stepMap = {location:0, passengers:1, rec:2, dash:3};
+    document.querySelectorAll('.step-dot').forEach((d,i)=>{
+      d.classList.toggle('active', i===stepMap[name]);
+    });
+    window.scrollTo(0,0);
+  }
+
+  // ---------- autocomplete ----------
+  function setupAutocomplete(inputId, listId, coordKey){
+    const input = document.getElementById(inputId);
+    const list = document.getElementById(listId);
+    let timer;
+    input.addEventListener('input', ()=>{
+      state[coordKey] = null;
+      input.classList.remove('resolved');
+      checkLocationsReady();
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if(!q){ list.style.display='none'; return; }
+      timer = setTimeout(()=>{
+        if(typeof kakao==='undefined' || !kakao.maps || !kakao.maps.services) return;
+        const places = new kakao.maps.services.Places();
+        places.keywordSearch(q, (data,status)=>{
+          if(status===kakao.maps.services.Status.OK && data.length){
+            list.innerHTML='';
+            data.slice(0,6).forEach(d=>{
+              const item=document.createElement('div');
+              item.className='ac-item';
+              item.innerHTML = `<strong>${d.place_name}</strong><span>${d.road_address_name || d.address_name || ''}</span>`;
+              item.addEventListener('mousedown', (e)=>{
+                e.preventDefault();
+                input.value = d.place_name;
+                state[coordKey] = {lat:+d.y, lng:+d.x};
+                input.classList.add('resolved');
+                list.style.display='none';
+                checkLocationsReady();
+              });
+              list.appendChild(item);
+            });
+            list.style.display='block';
+          } else {
+            console.warn('keywordSearch status:', status, 'query:', q);
+            list.style.display='none';
+          }
+        });
+      }, 250);
+    });
+    input.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter'){
+        e.preventDefault();
+        list.style.display='none';
+        resolveLocation(inputId, coordKey);
+      }
+    });
+    input.addEventListener('blur', ()=>{ setTimeout(()=>{ list.style.display='none'; }, 150); });
+  }
+
+  function resolveLocation(inputId, coordKey){
+    const input = document.getElementById(inputId);
+    const q = input.value.trim();
+    if(!q) return;
+    const btn = document.getElementById(coordKey==='originCoord' ? 'search-origin' : 'search-dest');
+    if(btn) btn.textContent = '···';
+    geocodeAddress(q).then(coord=>{
+      state[coordKey] = coord;
+      input.classList.add('resolved');
+      if(btn) btn.textContent = '🔍';
+      checkLocationsReady();
+    }).catch((err)=>{
+      if(btn) btn.textContent = '🔍';
+      input.classList.remove('resolved');
+      console.error('geocode failed:', err);
+      alert('위치를 찾지 못했어요.\n에러 코드: ' + err.message + '\n\n이 코드를 그대로 캡처해서 보내주세요.');
+    });
+  }
+
+  function checkLocationsReady(){
+    document.getElementById('btn-to-passengers').disabled = !(state.originCoord && state.destCoord);
+    if(state.originCoord && state.destCoord){
+      state.origin = document.getElementById('input-origin').value;
+      state.destination = document.getElementById('input-dest').value;
+      const directKm = fmt(haversineKm(state.originCoord, state.destCoord));
+      state.totalKm = Math.max(10, Math.round(directKm*1.25));
+      document.getElementById('location-map-wrap').style.display='block';
+      document.getElementById('km-hint').textContent = `예상 거리 약 ${state.totalKm}km · 직선거리 ${directKm}km 기준 추정치예요`;
+      setTimeout(()=>{
+        if(!mapInstance) initMap(); else mapInstance.relayout();
+        updateMapPreview(state.originCoord, state.destCoord, null);
+        searchRestStopsAlongRoute(state.originCoord, state.destCoord).then(stops=>{
+          state.realRestStops = stops;
+          updateMapPreview(state.originCoord, state.destCoord, stops);
+        });
+      }, 50);
+    }
+  }
+
+  document.getElementById('search-origin').addEventListener('click', ()=>resolveLocation('input-origin','originCoord'));
+  document.getElementById('search-dest').addEventListener('click', ()=>resolveLocation('input-dest','destCoord'));
+
+  setupAutocomplete('input-origin','ac-origin','originCoord');
+  setupAutocomplete('input-dest','ac-dest','destCoord');
+
+  // 1단계 → 2단계
+  document.getElementById('btn-to-passengers').addEventListener('click', ()=>{
+    showScreen('passengers');
+  });
+
+  // 2단계 → 3단계
+  document.getElementById('btn-to-rec').addEventListener('click', ()=>{
+    state.selectedPlanKey = null;
+    computePlans();
+    renderRecCards();
+    showScreen('rec');
+    setTimeout(()=>{
+      if(recMapInstance) recMapInstance.relayout();
+      drawPlanOnRecMap(state.selectedPlanKey);
+    }, 50);
+  });
+
+  // back 링크들
+  document.getElementById('back-to-location').addEventListener('click', ()=>showScreen('location'));
+  document.getElementById('back-to-passengers').addEventListener('click', ()=>showScreen('passengers'));
+  document.getElementById('back-to-rec').addEventListener('click', ()=>{ stopAutoplay(); showScreen('rec'); });
+
+  // 3단계 → 4단계
+  document.getElementById('btn-to-dash').addEventListener('click', ()=>{
+    if(!state.selectedPlanKey) return;
+    initDashboard();
+    showScreen('dash');
+  });
+
+  // ---------- theme picker ----------
+  const THEMES = [
+    {name:'블루', accent:'#3182F6', deep:'#1B64DA', soft:'#E8F1FE'},
+    {name:'코랄', accent:'#F2765C', deep:'#D9573C', soft:'#FCEAE4'},
+    {name:'민트', accent:'#2FB89E', deep:'#1E9280', soft:'#E4F6F2'},
+    {name:'오렌지', accent:'#F2A93B', deep:'#D98E1E', soft:'#FDF1DD'},
+    {name:'바이올렛', accent:'#9B7EDE', deep:'#7D5FC4', soft:'#F0EBFB'}
+  ];
+  function applyTheme(t){
+    const r = document.documentElement.style;
+    r.setProperty('--accent', t.accent);
+    r.setProperty('--accent-deep', t.deep);
+    r.setProperty('--accent-soft', t.soft);
+    r.setProperty('--green', t.accent);
+    r.setProperty('--green-light', t.deep);
+    const tog = document.getElementById('theme-toggle');
+    if(tog) tog.style.background = t.accent;
+    if(state.selectedPlanKey && recMapInstance) drawPlanOnRecMap(state.selectedPlanKey);
+  }
+  function initThemePicker(){
+    const sheet = document.getElementById('theme-sheet');
+    const swatches = document.getElementById('theme-swatches');
+    const toggle = document.getElementById('theme-toggle');
+    swatches.innerHTML='';
+    THEMES.forEach((t,i)=>{
+      const b = document.createElement('button');
+      b.style.cssText = `width:38px;height:38px;border-radius:50%;border:3px solid #fff;background:${t.accent};cursor:pointer;box-shadow:0 0 0 1px var(--line,#eee);transition:transform .12s;`;
+      b.title = t.name;
+      if(i===0) b.style.transform='scale(1.15)';
+      b.addEventListener('click', ()=>{
+        applyTheme(t);
+        swatches.querySelectorAll('button').forEach(x=>x.style.transform='');
+        b.style.transform='scale(1.15)';
+      });
+      swatches.appendChild(b);
+    });
+    toggle.addEventListener('click', ()=>{
+      sheet.style.display = sheet.style.display==='none' ? 'block' : 'none';
+    });
+  }
+
+  // ---------- init ----------
+  renderPassengerList();
+  initThemePicker();
+})();
+</script>
+</body>
+</html>
