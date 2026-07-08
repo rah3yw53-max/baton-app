@@ -1546,21 +1546,18 @@
       recMapLines.push(line);
     });
 
-    function addMarker(pos,label,type){
+    function addMarker(pos, label, type){
       const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
       const imgSrc = makeMarkerSvg(label, accent, type);
       const sz = new kakao.maps.Size(20,26);
       const img = new kakao.maps.MarkerImage(imgSrc, sz);
       const marker = new kakao.maps.Marker({position:new kakao.maps.LatLng(pos.lat,pos.lng), map:recMapInstance, image:img});
       recMapMarkers.push(marker);
-      if(label){
-        const ov = makeLabelOverlay(pos, label, recMapInstance);
-        recMapMarkers.push(ov);
-      }
+      // 배분 화면에서는 라벨 없이 마커만 표시
     }
     addMarker(state.originCoord, state.origin, 'start');
     addMarker(state.destCoord, state.destination, 'end');
-    (state.realRestStops||[]).forEach(s=>addMarker({lat:s.lat,lng:s.lng}, s.name, 'stop'));
+    // 바통스팟은 주행 대시보드에서만 표시
 
     recMapInstance.setBounds(bounds);
 
