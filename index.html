@@ -115,6 +115,7 @@
   }
   .screen > .btn-primary{margin-top:auto !important;}
   @keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+  @keyframes slideDown{from{opacity:0;transform:translateY(-16px);}to{opacity:1;transform:translateY(0);}}
 
   h1.page-title{
     font-family:'Pretendard',sans-serif;
@@ -1478,6 +1479,11 @@
 
   // ---------- route path helpers (for map polyline) ----------
   function buildRoutePath(){
+    // 실제 도로 좌표가 있으면 그걸 사용
+    if(state.routePath && state.routePath.length > 1){
+      return state.routePath;
+    }
+    // fallback: 정차 지점을 경유하는 근사 경로
     const wps = (state.realRestStops||[]).slice().sort((a,b)=>a.ratio-b.ratio);
     const pts = [
       {lat:state.originCoord.lat, lng:state.originCoord.lng},
@@ -1748,17 +1754,19 @@
     const origin = state.originCoord, dest = state.destCoord;
     if(!origin || !dest) return;
 
-    // 세그먼트별 경로선 (색깔 다르게)
+    const path = buildRoutePath();
+
+    // 세그먼트별 실제 도로 경로선 (색깔 다르게)
     plan.segs.forEach(seg=>{
-      const startT = seg.startKm/state.totalKm;
-      const endT = seg.endKm/state.totalKm;
-      const startLat = origin.lat + (dest.lat-origin.lat)*startT;
-      const startLng = origin.lng + (dest.lng-origin.lng)*startT;
-      const endLat = origin.lat + (dest.lat-origin.lat)*endT;
-      const endLng = origin.lng + (dest.lng-origin.lng)*endT;
-      const path = [new kakao.maps.LatLng(startLat,startLng), new kakao.maps.LatLng(endLat,endLng)];
+      const t0 = seg.startKm/state.totalKm;
+      const t1 = seg.endKm/state.totalKm;
+      const pts = sliceSegmentPoints(path, t0, t1).map(p=>{
+        const ll = new kakao.maps.LatLng(p.lat, p.lng);
+        bounds.extend(ll);
+        return ll;
+      });
       const line = new kakao.maps.Polyline({
-        path,
+        path: pts,
         strokeWeight:6,
         strokeColor:COLORS[seg.driverIdx%COLORS.length],
         strokeOpacity:0.9,
@@ -1766,8 +1774,6 @@
       });
       line.setMap(dashMapInstance);
       dashMapOverlays.push(line);
-      bounds.extend(new kakao.maps.LatLng(startLat,startLng));
-      bounds.extend(new kakao.maps.LatLng(endLat,endLng));
     });
 
     // 출발 · 도착 마커
@@ -1779,18 +1785,27 @@
     addPin(origin,'start');
     addPin(dest,'end');
 
-    // 휴게소 마커
+    // 바통스팟 마커 (쉼터·휴게소·주유소·편의점 상시 표시)
     (state.realRestStops||[]).forEach(s=>{
-      const img = new kakao.maps.MarkerImage(makeMarkerSvg('','','stop'), new kakao.maps.Size(20,26));
-      const m = new kakao.maps.Marker({position:new kakao.maps.LatLng(s.lat,s.lng), map:dashMapInstance, image:img});
-      dashMapOverlays.push(m);
+      const spotEl = document.createElement('div');
+      spotEl.style.cssText = 'display:flex;flex-direction:column;align-items:center;pointer-events:none;';
+      spotEl.innerHTML = `
+        <div style="background:#fff;border:2px solid #3182F6;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.2);">${s.emoji||'🅿️'}</div>
+      `;
+      const ov = new kakao.maps.CustomOverlay({
+        position: new kakao.maps.LatLng(s.lat, s.lng),
+        content: spotEl,
+        map: dashMapInstance,
+        yAnchor: 0.5, xAnchor: 0.5, zIndex: 50
+      });
+      dashMapOverlays.push(ov);
     });
 
     // 초기 화면: 전체 경로 보기 상태
     dashMapInstance.setBounds(bounds);
     // 잠시 뒤 자동차 위치로 줌인
     setTimeout(()=>{
-      dashMapInstance.setLevel(4);
+      dashMapInstance.setLevel(5);
       updateDashProgressMarker(true);
     }, 400);
   }
@@ -1805,18 +1820,19 @@
     const plan = state.plans[state.selectedPlanKey];
     const useKm = smoothProgress || state.progressKm;
     const t = Math.min(1, useKm/state.totalKm);
-    const lat = state.originCoord.lat + (state.destCoord.lat - state.originCoord.lat)*t;
-    const lng = state.originCoord.lng + (state.destCoord.lng - state.originCoord.lng)*t;
+
+    // 실제 도로 경로 위의 위치
+    const path = buildRoutePath();
+    const pos = interpolateOnPath(path, t);
+    const lat = pos.lat, lng = pos.lng;
 
     // 현재 세그먼트의 운전자 색상
     const idx = currentSegmentIndex(useKm);
     const driverColor = COLORS[plan.segs[idx].driverIdx % COLORS.length];
 
-    // 진행 방향 각도 (다음 위치와의 방향)
-    const nextT = Math.min(1, t+0.01);
-    const nextLat = state.originCoord.lat + (state.destCoord.lat - state.originCoord.lat)*nextT;
-    const nextLng = state.originCoord.lng + (state.destCoord.lng - state.originCoord.lng)*nextT;
-    const heading = bearingDeg({lat,lng}, {lat:nextLat,lng:nextLng});
+    // 진행 방향 각도 (경로 위 조금 앞 지점과의 방향)
+    const nextPos = interpolateOnPath(path, Math.min(1, t+0.005));
+    const heading = bearingDeg({lat,lng}, nextPos);
 
     const carEl = document.createElement('div');
     carEl.innerHTML = carMarkerHTML(heading, driverColor);
@@ -1830,10 +1846,65 @@
     });
 
     if(recenter){
-      // 카메라를 자동차 살짝 아래로 (자동차가 화면 상단쪽에 위치)
-      const offsetLat = lat - (state.destCoord.lat - state.originCoord.lat)*0.001;
-      dashMapInstance.panTo(new kakao.maps.LatLng(offsetLat, lng));
+      dashMapInstance.panTo(new kakao.maps.LatLng(lat, lng));
     }
+
+    // 바통스팟 접근 알림 체크
+    checkBatonSpotAlert(useKm);
+  }
+
+  // ---------- 바통스팟 알림 ----------
+  let alertedSpots = new Set();
+
+  function checkBatonSpotAlert(currentKm){
+    if(!state.restStops || !state.restStops.length) return;
+    const ALERT_DISTANCE = 2; // 2km 전 알림
+
+    state.restStops.forEach((spot, i)=>{
+      const distToSpot = spot.km - currentKm;
+      if(distToSpot > 0 && distToSpot <= ALERT_DISTANCE && !alertedSpots.has(spot.name)){
+        alertedSpots.add(spot.name);
+        // 다음 스팟까지의 시간 계산
+        const nextSpot = state.restStops.slice(i+1).find(s=>s.km > spot.km);
+        const kmPerMin = state.totalKm / (state.totalMinutes || 1);
+        let nextInfo = '';
+        if(nextSpot){
+          const minToNext = Math.round((nextSpot.km - spot.km) / kmPerMin);
+          nextInfo = ` 여기 안 쉬면 다음은 ${minToNext}분 뒤예요.`;
+        } else {
+          nextInfo = ' 이후에는 쉴 곳이 없어요!';
+        }
+        const facilities = spot.type==='휴게소' ? '화장실·편의점·카페 이용 가능!' :
+                          spot.type==='졸음쉼터' ? '잠깐 눈 붙이기 좋아요.' :
+                          spot.type==='주유소' ? '주유하면서 화장실도 가능해요.' :
+                          spot.type==='편의점' ? '간단한 간식·화장실 가능해요.' : '';
+        showBatonSpotToast(`${spot.emoji||'📍'} ${fmt(distToSpot)}km 뒤 ${spot.name}`, `${facilities}${nextInfo}`);
+        addLog(`${spot.emoji||'📍'} ${spot.name} ${fmt(distToSpot)}km 앞 — ${facilities}${nextInfo}`, `바통스팟 알림`);
+      }
+    });
+  }
+
+  function showBatonSpotToast(title, body){
+    // 기존 토스트 제거
+    const old = document.getElementById('baton-toast');
+    if(old) old.remove();
+    const toast = document.createElement('div');
+    toast.id = 'baton-toast';
+    toast.style.cssText = `
+      position:absolute;top:70px;left:14px;right:14px;z-index:50;
+      background:#fff;border-radius:16px;padding:14px 16px;
+      box-shadow:0 8px 28px rgba(0,0,0,0.25);
+      border-left:4px solid #3182F6;
+      animation:slideDown .35s ease;
+    `;
+    toast.innerHTML = `
+      <div style="font-weight:800;font-size:14px;color:#1E1B18;letter-spacing:-0.02em;">${title}</div>
+      <div style="font-size:12.5px;color:#6E6862;margin-top:4px;line-height:1.5;">${body}</div>
+    `;
+    const container = document.getElementById('dash-map-container');
+    if(container) container.appendChild(toast);
+    // 6초 후 자동 제거
+    setTimeout(()=>{ toast.style.opacity='0'; toast.style.transition='opacity .4s'; setTimeout(()=>toast.remove(), 400); }, 6000);
   }
 
   // 진행 시 목표 km까지 부드럽게 애니메이션
@@ -1859,6 +1930,7 @@
     const plan = state.plans[state.selectedPlanKey];
     state.progressKm = 0;
     smoothProgress = 0;
+    alertedSpots = new Set();
     if(smoothAnimId){ cancelAnimationFrame(smoothAnimId); smoothAnimId = null; }
     state.lastHandoffIndex = -1;
     state.log = [];
@@ -2100,6 +2172,36 @@
     };
   }
 
+  // 실제 도로 좌표(vertexes)까지 받아서 state.routePath에 저장
+  async function fetchFullRoutePath(priority, avoid){
+    const o = `${state.originCoord.lng},${state.originCoord.lat}`;
+    const d = `${state.destCoord.lng},${state.destCoord.lat}`;
+    const avoidParam = avoid ? `&avoid=${avoid}` : '';
+    const res = await fetch(`/api/directions?origin=${o}&destination=${d}&priority=${priority}${avoidParam}&full=1`);
+    const data = await res.json();
+    if(!data.routes || !data.routes[0] || data.routes[0].result_code !== 0){
+      throw new Error('경로 좌표 로드 실패');
+    }
+    // 모든 section > roads > vertexes를 이어붙임
+    const pts = [];
+    (data.routes[0].sections||[]).forEach(section=>{
+      (section.roads||[]).forEach(road=>{
+        const v = road.vertexes||[];
+        for(let i=0;i<v.length;i+=2){
+          pts.push({lng:v[i], lat:v[i+1]});
+        }
+      });
+    });
+    if(pts.length < 2) throw new Error('경로 좌표 없음');
+    // 누적 거리 계산 (0~1 정규화)
+    const dists=[0];
+    for(let i=1;i<pts.length;i++){ dists.push(dists[i-1]+haversineKm(pts[i-1],pts[i])); }
+    const total = dists[dists.length-1] || 1;
+    state.routePathTotalKm = total;
+    state.routePath = pts.map((p,i)=>({...p, cum: dists[i]/total}));
+    return state.routePath;
+  }
+
   async function loadRouteOptions(){
     document.getElementById('route-loading').style.display='block';
     document.getElementById('route-options').style.display='none';
@@ -2155,6 +2257,9 @@
         state.totalKm = opt.distanceKm;
         state.totalMinutes = opt.durationMin;
         document.getElementById('btn-to-passengers').disabled = false;
+        // 실제 도로 좌표 백그라운드 로드
+        state.routePath = null;
+        fetchFullRoutePath(opt.key, opt.avoid).catch(err=>console.warn('경로 좌표 로드 실패:', err));
       });
       // 첫 카드 자동 선택
       if(i===0) card.click();
