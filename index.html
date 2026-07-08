@@ -969,9 +969,10 @@
           <span class="dash-next-text">다음 교대 지점 · <b id="cd-next-stop">휴게소 2</b></span>
         </div>
 
-        <div class="dash-actions">
+        <div class="dash-actions" style="flex-wrap:wrap;">
+          <button class="dash-action-btn primary" id="btn-gps-start" style="flex:2;">📍 실시간 시작</button>
           <button class="dash-action-btn" id="btn-advance">+10km</button>
-          <button class="dash-action-btn primary" id="btn-autoplay">자동 진행 ▶</button>
+          <button class="dash-action-btn" id="btn-autoplay">자동</button>
           <button class="dash-action-btn" id="btn-reset">처음부터</button>
         </div>
 
@@ -2018,27 +2019,127 @@
   });
   document.getElementById('btn-reset').addEventListener('click', ()=>{
     stopAutoplay();
+    stopGps();
     initDashboard();
   });
   document.getElementById('btn-autoplay').addEventListener('click', (e)=>{
     if(state.autoplay){ stopAutoplay(); }
     else{
       state.autoplay = setInterval(()=>advance(8), 1100);
-      e.target.textContent = '일시정지 ⏸';
+      e.target.textContent = '⏸';
     }
   });
   function stopAutoplay(){
     if(state.autoplay){ clearInterval(state.autoplay); state.autoplay=null; }
-    document.getElementById('btn-autoplay').textContent = '자동 진행 ▶';
+    document.getElementById('btn-autoplay').textContent = '자동';
   }
   function advance(km){
     const prev = state.progressKm;
     state.progressKm = Math.min(state.totalKm, fmt(state.progressKm+km));
     checkHandoff(prev, state.progressKm);
-    // 지도 자동차: 부드럽게 이동
     animateToProgress(state.progressKm);
     if(state.progressKm>=state.totalKm) stopAutoplay();
   }
+
+  // ---------- GPS 실시간 추적 ----------
+  let gpsWatchId = null;
+
+  function stopGps(){
+    if(gpsWatchId!==null){
+      navigator.geolocation.clearWatch(gpsWatchId);
+      gpsWatchId = null;
+    }
+    const btn = document.getElementById('btn-gps-start');
+    if(btn){ btn.textContent = '📍 실시간 시작'; btn.classList.add('primary'); }
+  }
+
+  // GPS 좌표를 경로 위 가장 가까운 지점으로 스냅
+  function snapToPath(lat, lng){
+    const path = buildRoutePath();
+    if(!path || path.length<2) return {km:0, dist:0};
+    let bestKm = 0, bestDist = Infinity;
+    // 경로 위 각 세그먼트에서 최근접점 계산
+    for(let i=1;i<path.length;i++){
+      const a = path[i-1], b = path[i];
+      // 위경도를 평면으로 근사 (짧은 구간이라 OK)
+      const ax = a.lng, ay = a.lat;
+      const bx = b.lng, by = b.lat;
+      const px = lng,   py = lat;
+      const dx = bx-ax, dy = by-ay;
+      const len2 = dx*dx + dy*dy;
+      let t = 0;
+      if(len2 > 1e-12){
+        t = ((px-ax)*dx + (py-ay)*dy) / len2;
+        t = Math.max(0, Math.min(1, t));
+      }
+      const cx = ax + dx*t, cy = ay + dy*t;
+      // 거리(m 근사): 위도 1도 ≈ 111km, 경도는 cos(lat) 반영
+      const kmPerLng = 111 * Math.cos(lat*Math.PI/180);
+      const dLng = (px-cx) * kmPerLng;
+      const dLat = (py-cy) * 111;
+      const dist = Math.sqrt(dLng*dLng + dLat*dLat); // km
+      if(dist < bestDist){
+        bestDist = dist;
+        // 이 지점의 누적 진행률
+        const cum = a.cum + (b.cum - a.cum) * t;
+        bestKm = cum * state.totalKm;
+      }
+    }
+    return {km: bestKm, dist: bestDist};
+  }
+
+  function startGps(){
+    if(!('geolocation' in navigator)){
+      alert('이 기기에서는 GPS를 사용할 수 없어요.');
+      return;
+    }
+    const btn = document.getElementById('btn-gps-start');
+    btn.textContent = '🟢 위치 추적 중';
+    btn.classList.remove('primary');
+
+    // 다른 진행 중지
+    stopAutoplay();
+
+    gpsWatchId = navigator.geolocation.watchPosition(
+      (pos)=>{
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const snap = snapToPath(lat, lng);
+        // 경로에서 300m 이상 벗어나면 무시 (엉뚱한 위치 방지)
+        if(snap.dist > 0.3){
+          console.warn(`GPS off-route: ${snap.dist.toFixed(2)}km`);
+          return;
+        }
+        const prev = state.progressKm;
+        // 뒤로 가는 GPS 튐 무시
+        if(snap.km < prev - 0.5) return;
+        state.progressKm = fmt(snap.km);
+        checkHandoff(prev, state.progressKm);
+        animateToProgress(state.progressKm);
+        if(state.progressKm >= state.totalKm){
+          stopGps();
+        }
+      },
+      (err)=>{
+        console.error('GPS error:', err);
+        if(err.code === 1){
+          alert('위치 권한이 거부됐어요. 브라우저 설정에서 허용해주세요.');
+        } else if(err.code === 2){
+          alert('현재 위치를 찾을 수 없어요. 야외에서 다시 시도해주세요.');
+        }
+        stopGps();
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
+    );
+  }
+
+  document.getElementById('btn-gps-start').addEventListener('click', ()=>{
+    if(gpsWatchId !== null){
+      stopGps();
+    } else {
+      startGps();
+    }
+  });
 
   // ---------- navigation ----------
   function showScreen(name){
@@ -2322,7 +2423,7 @@
   document.getElementById('back-to-location').addEventListener('click', ()=>showScreen('location'));
   document.getElementById('back-to-route').addEventListener('click', ()=>showScreen('route'));
   document.getElementById('back-to-passengers').addEventListener('click', ()=>showScreen('passengers'));
-  document.getElementById('back-to-rec').addEventListener('click', ()=>{ stopAutoplay(); showScreen('rec'); });
+  document.getElementById('back-to-rec').addEventListener('click', ()=>{ stopAutoplay(); stopGps(); showScreen('rec'); });
 
   // 4단계 → 5단계: 주행
   document.getElementById('btn-to-dash').addEventListener('click', ()=>{
