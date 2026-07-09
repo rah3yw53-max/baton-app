@@ -85,8 +85,20 @@
     display:flex;
     align-items:center;
     justify-content:space-between;
-    padding:18px 20px 16px;
-    border-bottom:1px solid var(--line, var(--cream-dim));
+    padding:16px 20px 14px;
+    position:relative;
+  }
+  .topbar::after{
+    content:'';
+    position:absolute;
+    left:0;right:0;bottom:0;
+    height:3px;
+    background:linear-gradient(90deg,
+      #2FB89E 0%, #2FB89E 25%,
+      #F2A93B 25%, #F2A93B 50%,
+      #5B8DEF 50%, #5B8DEF 75%,
+      #E2725B 75%, #E2725B 100%);
+    opacity:0.5;
   }
   .topbar .brand{
     display:flex;
@@ -122,8 +134,8 @@
   h1.page-title{
     font-family:'Pretendard',sans-serif;
     font-weight:800;
-    font-size:22px;
-    letter-spacing:-0.03em;
+    font-size:23px;
+    letter-spacing:-0.04em;
     margin:2px 0 4px;
     line-height:1.3;
   }
@@ -155,6 +167,7 @@
     color:var(--ink);
     outline:none;
     transition:border-color .2s, box-shadow .2s;
+    box-shadow:0 1px 2px rgba(30,27,24,0.03);
   }
   input[type=text]:focus, input[type=number]:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
   .route-line-icon{
@@ -329,6 +342,74 @@
     display:flex;align-items:center;gap:9px;
     margin-bottom:12px;
   }
+
+  /* 시그니처: 4색 릴레이 스트립 */
+  .relay-strip{
+    flex:1;
+    height:4px;
+    border-radius:2px;
+    margin-left:6px;
+    background:linear-gradient(90deg,
+      #2FB89E 0%, #2FB89E 25%,
+      #F2A93B 25%, #F2A93B 50%,
+      #5B8DEF 50%, #5B8DEF 75%,
+      #E2725B 75%, #E2725B 100%);
+    opacity:0.85;
+  }
+
+  /* 도로 중앙 점선 (히어로 배경) */
+  .home-center{position:relative;}
+  .home-road-line{
+    position:absolute;
+    top:-10px;bottom:-10px;
+    left:50%;
+    width:0;
+    border-left:2px dashed #DCE6F5;
+    transform:translateX(-50%);
+    z-index:0;
+  }
+  .home-center > *:not(.home-road-line){position:relative;z-index:1;}
+
+  /* 하이라이트 타이틀 */
+  .home-hero-title .hl{
+    position:relative;
+    display:inline-block;
+    z-index:1;
+  }
+  .home-hero-title .hl::after{
+    content:'';
+    position:absolute;
+    left:-3px;right:-3px;
+    bottom:2px;
+    height:38%;
+    background:linear-gradient(90deg, rgba(49,130,246,0.22), rgba(91,141,239,0.28));
+    border-radius:4px;
+    z-index:-1;
+  }
+
+  /* 통계 라벨의 색 점 */
+  .stat-dot{
+    display:inline-block;
+    width:7px;height:7px;border-radius:50%;
+    margin-right:5px;
+    vertical-align:1px;
+  }
+
+  /* CTA 화살표 */
+  .home-cta-light{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+  }
+  .cta-arrow{
+    width:22px;height:22px;
+    display:flex;align-items:center;justify-content:center;
+    transition:transform .2s ease;
+  }
+  .cta-arrow svg{width:100%;height:100%;}
+  .home-cta-light:hover .cta-arrow{transform:translateX(4px);}
+  .home-cta-light:active .cta-arrow{transform:translateX(7px);}
   .home-brand-badge{
     width:34px;height:34px;border-radius:11px;
     background:var(--accent);
@@ -357,21 +438,22 @@
   .home-hero-title{
     font-family:'Pretendard',sans-serif;
     font-weight:800;
-    font-size:26px;
-    letter-spacing:-0.03em;
+    font-size:29px;
+    letter-spacing:-0.045em;
+    line-height:1.28;
     color:var(--ink);
-    margin-bottom:6px;
+    margin-bottom:10px;
   }
   .home-hero-sub{
     font-size:14px;
     color:var(--muted-dark);
     font-weight:500;
-    margin-bottom:20px;
+    margin-bottom:22px;
   }
   .home-hero-illust{
-    width:160px;
-    max-width:60%;
-    margin-bottom:24px;
+    width:210px;
+    max-width:78%;
+    margin-bottom:22px;
   }
   .home-hero-illust svg{width:100%;height:auto;}
 
@@ -380,11 +462,13 @@
     align-items:center;
     justify-content:center;
     background:#fff;
-    border-radius:20px;
-    padding:20px 30px;
-    box-shadow:0 4px 20px rgba(49,130,246,0.06);
+    border-radius:18px;
+    padding:18px 32px;
+    box-shadow:
+      0 1px 2px rgba(30,27,24,0.04),
+      0 8px 24px rgba(49,130,246,0.08);
     border:1px solid #EDF1F7;
-    gap:26px;
+    gap:30px;
   }
   .home-stat-item{text-align:center;}
   .home-stat-item .hsi-num{
@@ -829,46 +913,58 @@
           </svg>
         </div>
         <div class="home-brand-name">바통</div>
+        <div class="relay-strip"></div>
       </div>
 
       <div class="home-center">
-        <div class="home-hero-title">안녕하세요 👋</div>
-        <div class="home-hero-sub">오늘도 안전운전해요</div>
+        <div class="home-road-line" aria-hidden="true"></div>
+        <div class="home-hero-title">오늘, 어디까지<br><span class="hl">함께</span> 가볼까요?</div>
+        <div class="home-hero-sub">바통을 넘기듯, 번갈아 달려요</div>
 
         <div class="home-hero-illust">
-          <svg viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="100" cy="90" r="55" fill="#EEF3FE"/>
-            <path d="M40 100 Q100 60 160 100" stroke="#3182F6" stroke-width="3" stroke-dasharray="4 6" stroke-linecap="round" fill="none" opacity="0.5"/>
-            <g transform="translate(70,68)">
-              <rect x="0" y="20" width="60" height="26" rx="10" fill="#3182F6"/>
-              <rect x="10" y="8" width="40" height="20" rx="8" fill="#5B9DFF"/>
-              <circle cx="12" cy="48" r="7" fill="#1E1B18"/>
-              <circle cx="48" cy="48" r="7" fill="#1E1B18"/>
-              <circle cx="12" cy="48" r="3" fill="#5B9DFF"/>
-              <circle cx="48" cy="48" r="3" fill="#5B9DFF"/>
-              <rect x="18" y="14" width="24" height="8" rx="2" fill="#B3D1FF"/>
+          <svg viewBox="0 0 220 130" xmlns="http://www.w3.org/2000/svg">
+            <!-- 4색 릴레이 도로 -->
+            <path d="M10 100 Q60 78 110 92 T210 84" stroke="#2FB89E" stroke-width="5" fill="none" stroke-linecap="round" stroke-dasharray="26 0" pathLength="100" stroke-dashoffset="0" opacity="0.9" style="stroke-dasharray:25 75;"/>
+            <path d="M10 100 Q60 78 110 92 T210 84" stroke="#F2A93B" stroke-width="5" fill="none" stroke-linecap="round" pathLength="100" style="stroke-dasharray:25 75;stroke-dashoffset:-25;"/>
+            <path d="M10 100 Q60 78 110 92 T210 84" stroke="#5B8DEF" stroke-width="5" fill="none" stroke-linecap="round" pathLength="100" style="stroke-dasharray:25 75;stroke-dashoffset:-50;"/>
+            <path d="M10 100 Q60 78 110 92 T210 84" stroke="#E2725B" stroke-width="5" fill="none" stroke-linecap="round" pathLength="100" style="stroke-dasharray:25 75;stroke-dashoffset:-75;"/>
+            <!-- 자동차 -->
+            <g transform="translate(88,52)">
+              <rect x="0" y="18" width="52" height="24" rx="10" fill="#3182F6"/>
+              <rect x="9" y="7" width="34" height="18" rx="7" fill="#5B9DFF"/>
+              <rect x="15" y="12" width="22" height="7" rx="2" fill="#CFE3FF"/>
+              <circle cx="11" cy="43" r="6.5" fill="#1E1B18"/>
+              <circle cx="41" cy="43" r="6.5" fill="#1E1B18"/>
+              <circle cx="11" cy="43" r="2.6" fill="#9CC1FF"/>
+              <circle cx="41" cy="43" r="2.6" fill="#9CC1FF"/>
             </g>
-            <circle cx="42" cy="102" r="4" fill="#3182F6"/>
-            <circle cx="158" cy="102" r="4" fill="#FF6B6B"/>
+            <!-- 시작/끝 점 -->
+            <circle cx="10" cy="100" r="4.5" fill="#2FB89E"/>
+            <circle cx="210" cy="84" r="4.5" fill="#E2725B"/>
           </svg>
         </div>
 
         <div class="home-stats-light">
           <div class="home-stat-item">
             <div class="hsi-num">0</div>
-            <div class="hsi-label">이번 달 여정</div>
+            <div class="hsi-label"><span class="stat-dot" style="background:#2FB89E"></span>이번 달 여정</div>
           </div>
           <div class="home-stat-divider"></div>
           <div class="home-stat-item">
             <div class="hsi-num">0<span class="hsi-unit">km</span></div>
-            <div class="hsi-label">누적 거리</div>
+            <div class="hsi-label"><span class="stat-dot" style="background:#F2A93B"></span>누적 거리</div>
           </div>
         </div>
       </div>
 
       <div class="home-bottom">
         <button class="btn btn-primary home-cta-light" id="btn-home-start">
-          🚗 새 여정 시작하기
+          <span>새 여정 시작하기</span>
+          <span class="cta-arrow" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 10H16M16 10L11 5M16 10L11 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
         </button>
       </div>
     </div>
